@@ -50,7 +50,6 @@ Globals:
   Function:
     Timeout: 30
     Runtime: nodejs18.x
-    Handler: index.handler
     Environment:
       Variables:
         NODE_ENV: !Ref Environment
@@ -260,7 +259,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: dist/
-      Handler: handlers/index.connect
+      Handler: handlers/connect.handler
       Layers:
         - !Ref SentryLambdaLayerArn
       Policies:
@@ -274,7 +273,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: dist/
-      Handler: handlers/index.disconnect
+      Handler: handlers/disconnect.handler
       Layers:
         - !Ref SentryLambdaLayerArn
       Policies:
@@ -288,7 +287,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: dist/
-      Handler: handlers/index.message
+      Handler: handlers/message.handler
       Layers:
         - !Ref SentryLambdaLayerArn
       Policies:
@@ -308,7 +307,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: dist/
-      Handler: handlers/index.default
+      Handler: handlers/default.handler
       Layers:
         - !Ref SentryLambdaLayerArn
       Policies:
