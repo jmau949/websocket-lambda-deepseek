@@ -1,5 +1,5 @@
 {
-  "name": "generic-lambda-websocket",
+  "name": "websocket-lambda-deepseek",
   "version": "1.0.0",
   "description": "Generic api gateway lambda dynamodb native websockets",
   "main": "dist/index.js",
