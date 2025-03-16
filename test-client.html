@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Test Client</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    #connection-status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+    }
+    .connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .connecting {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+    button {
+      padding: 8px 16px;
+      margin-right: 10px;
+      border: none;
+      border-radius: 4px;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    textarea {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      border: 1px solid #ced4da;
+    }
+    #messages {
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      padding: 10px;
+      height: 300px;
+      overflow-y: auto;
+      background-color: #f8f9fa;
+      margin-bottom: 20px;
+    }
+    .message {
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 4px;
+    }
+    .sent {
+      background-color: #e2f3ff;
+      text-align: right;
+    }
+    .received {
+      background-color: #f1f1f1;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Test Client</h1>
+  
+  <div id="connection-status" class="disconnected">Disconnected</div>
+  
+  <div>
+    <input type="text" id="websocket-url" placeholder="WebSocket URL (wss://...)" 
+           value="ws://localhost:3000" style="width: 400px; padding: 8px;">
+    <div style="margin-top: 10px;">
+      <p style="margin: 0 0 5px 0; font-size: 14px;">Authentication Token (JWT) - <strong>Required</strong>:</p>
+      <input type="text" id="auth-token" placeholder="Paste your JWT token here" 
+             value="" style="width: 400px; padding: 8px;">
+      <p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">
+        Note: For WebSockets, HTTP-only cookies cannot be used. The token must be provided explicitly.
+      </p>
+    </div>
+    <div style="margin-top: 10px;">
+      <button id="connect-btn">Connect</button>
+      <button id="disconnect-btn" disabled>Disconnect</button>
+    </div>
+  </div>
+  
+  <h2>Messages</h2>
+  <div id="messages"></div>
+  
+  <div>
+    <textarea id="message-input" rows="4" placeholder="Type your message here..."></textarea>
+    <button id="send-btn" disabled>Send Message</button>
+  </div>
+  
+  <script>
+    let socket = null;
+    
+    const connectBtn = document.getElementById('connect-btn');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+    const sendBtn = document.getElementById('send-btn');
+    const messageInput = document.getElementById('message-input');
+    const messagesContainer = document.getElementById('messages');
+    const connectionStatus = document.getElementById('connection-status');
+    const websocketUrlInput = document.getElementById('websocket-url');
+    const authTokenInput = document.getElementById('auth-token');
+    
+    /**
+     * Helper function to extract token from browser cookies
+     * (Only for convenience in transferring the token from cookies to query param)
+     */
+    function getTokenFromCookies(cookieName = 'authToken') {
+      const cookies = document.cookie.split(';');
+      for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === cookieName) {
+          return value;
+        }
+      }
+      return null;
+    }
+    
+    // Try to pre-fill token from cookie if available
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = getTokenFromCookies();
+      if (token) {
+        authTokenInput.value = token;
+        console.log('Auth token loaded from cookie for convenience');
+      }
+    });
+    
+    // Connect to WebSocket
+    connectBtn.addEventListener('click', () => {
+      const websocketUrl = websocketUrlInput.value.trim();
+      const authToken = authTokenInput.value.trim();
+      
+      if (!websocketUrl) {
+        alert('Please enter a WebSocket URL');
+        return;
+      }
+      
+      if (!authToken) {
+        alert('Authentication token is required. WebSockets cannot access HTTP-only cookies.');
+        return;
+      }
+      
+      try {
+        // Always append token as query parameter (required for WebSocket auth)
+        let connectionUrl = websocketUrl;
+        connectionUrl += connectionUrl.includes('?') 
+          ? `&token=${encodeURIComponent(authToken)}`
+          : `?token=${encodeURIComponent(authToken)}`;
+        
+        // Add a connection timeout handler for auth failures
+        const connectionTimeout = setTimeout(() => {
+          if (socket && socket.readyState === 0) { // Still in CONNECTING state
+            displayMessage('Connection timed out. This may be due to an authentication failure.', 'error');
+            socket.close();
+            updateConnectionStatus('disconnected');
+            disconnectBtn.disabled = true;
+            connectBtn.disabled = false;
+          }
+        }, 10000); // 10 seconds timeout
+        
+        socket = new WebSocket(connectionUrl);
+        updateConnectionStatus('connecting');
+        
+        socket.onopen = () => {
+          clearTimeout(connectionTimeout);
+          updateConnectionStatus('connected');
+          disconnectBtn.disabled = false;
+          sendBtn.disabled = false;
+          connectBtn.disabled = true;
+        };
+        
+        socket.onopen = () => {
+          updateConnectionStatus('connected');
+          disconnectBtn.disabled = false;
+          sendBtn.disabled = false;
+          connectBtn.disabled = true;
+        };
+        
+        socket.onmessage = (event) => {
+          displayMessage(event.data, 'received');
+        };
+        
+        socket.onclose = () => {
+          updateConnectionStatus('disconnected');
+          disconnectBtn.disabled = true;
+          sendBtn.disabled = true;
+          connectBtn.disabled = false;
+        };
+        
+        socket.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          updateConnectionStatus('disconnected');
+          displayMessage('Error connecting to WebSocket server', 'error');
+          disconnectBtn.disabled = true;
+          sendBtn.disabled = true;
+          connectBtn.disabled = false;
+        };
+      } catch (error) {
+        console.error('Error creating WebSocket:', error);
+        alert('Error creating WebSocket connection');
+      }
+    });
+    
+    // Disconnect from WebSocket
+    disconnectBtn.addEventListener('click', () => {
+      if (socket) {
+        socket.close();
+      }
+    });
+    
+    // Send message
+    sendBtn.addEventListener('click', () => {
+      const message = messageInput.value.trim();
+      
+      if (!message) {
+        return;
+      }
+      
+      try {
+        // Format as JSON with action
+        const payload = {
+          action: 'message',
+          data: message
+        };
+        
+        socket.send(JSON.stringify(payload));
+        displayMessage(JSON.stringify(payload, null, 2), 'sent');
+        messageInput.value = '';
+      } catch (error) {
+        console.error('Error sending message:', error);
+        displayMessage('Error sending message', 'error');
+      }
+    });
+    
+    // Update connection status UI
+    function updateConnectionStatus(status) {
+      connectionStatus.className = status;
+      
+      switch (status) {
+        case 'connected':
+          connectionStatus.textContent = 'Connected';
+          break;
+        case 'disconnected':
+          connectionStatus.textContent = 'Disconnected';
+          break;
+        case 'connecting':
+          connectionStatus.textContent = 'Connecting...';
+          break;
+      }
+    }
+    
+    // Display message in the UI
+    function displayMessage(message, type) {
+      let parsedMessage = message;
+      
+      // Try to parse JSON messages
+      if (typeof message === 'string') {
+        try {
+          parsedMessage = JSON.stringify(JSON.parse(message), null, 2);
+        } catch (e) {
+          // Not JSON, keep as is
+        }
+      }
+      
+      const messageElement = document.createElement('div');
+      messageElement.className = `message ${type}`;
+      messageElement.textContent = parsedMessage;
+      
+      messagesContainer.appendChild(messageElement);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  </script>
+</body>
+</html>
