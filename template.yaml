@@ -58,6 +58,9 @@ Globals:
         COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
         COGNITO_CLIENT_ID: !Ref CognitoClientId
         SENTRY_DSN: !Ref SentryDsn
+    Tags:
+      Project: deepseek
+      Environment: !Ref Environment
 
 Resources:
   # Create a new ACM Certificate for the subdomain
@@ -71,6 +74,11 @@ Resources:
       DomainValidationOptions:
         - DomainName: !Ref DomainName
           HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Project
+          Value: deepseek
+        - Key: Environment
+          Value: !Ref Environment
 
   # WebSocket API
   WebSocketApi:
@@ -80,6 +88,9 @@ Resources:
       ProtocolType: WEBSOCKET
       RouteSelectionExpression: "$request.body.action"
       ApiKeySelectionExpression: "$request.header.x-api-key"
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   # Authorizer
   WebSocketAuthorizer:
@@ -94,6 +105,9 @@ Resources:
         Audience:
           - !Ref CognitoClientId
         Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}'
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   # DynamoDB Table for connections
   ConnectionsTable:
@@ -106,9 +120,26 @@ Resources:
       AttributeDefinitions:
         - AttributeName: connectionId
           AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
       KeySchema:
         - AttributeName: connectionId
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: deepseek
+        - Key: Environment
+          Value: !Ref Environment
 
   # Routes and Integrations
   ConnectRoute:
@@ -124,6 +155,9 @@ Resources:
         - /
         - - integrations
           - !Ref ConnectIntegration
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   ConnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -133,6 +167,9 @@ Resources:
       IntegrationUri: 
         Fn::Sub:
           arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   DisconnectRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -146,6 +183,9 @@ Resources:
         - /
         - - integrations
           - !Ref DisconnectIntegration
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   DisconnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -155,6 +195,9 @@ Resources:
       IntegrationUri: 
         Fn::Sub:
           arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectFunction.Arn}/invocations
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   MessageRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -168,6 +211,9 @@ Resources:
         - /
         - - integrations
           - !Ref MessageIntegration
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   MessageIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -177,6 +223,9 @@ Resources:
       IntegrationUri: 
         Fn::Sub:
           arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessageFunction.Arn}/invocations
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   DefaultRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -190,6 +239,9 @@ Resources:
         - /
         - - integrations
           - !Ref DefaultIntegration
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   DefaultIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -199,6 +251,9 @@ Resources:
       IntegrationUri: 
         Fn::Sub:
           arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DefaultFunction.Arn}/invocations
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   # Lambda Functions
   ConnectFunction:
@@ -211,6 +266,9 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ConnectionsTable
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   DisconnectFunction:
     Type: AWS::Serverless::Function
@@ -222,6 +280,9 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ConnectionsTable
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   MessageFunction:
     Type: AWS::Serverless::Function
@@ -239,6 +300,9 @@ Resources:
                 - 'execute-api:ManageConnections'
               Resource:
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   DefaultFunction:
     Type: AWS::Serverless::Function
@@ -256,6 +320,9 @@ Resources:
                 - 'execute-api:ManageConnections'
               Resource:
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   # Lambda Log Groups with 30-day retention
   ConnectFunctionLogGroup:
@@ -265,6 +332,11 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${ConnectFunction}"
       RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: deepseek
+        - Key: Environment
+          Value: !Ref Environment
 
   DisconnectFunctionLogGroup:
     Type: AWS::Logs::LogGroup
@@ -273,6 +345,11 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${DisconnectFunction}"
       RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: deepseek
+        - Key: Environment
+          Value: !Ref Environment
 
   MessageFunctionLogGroup:
     Type: AWS::Logs::LogGroup
@@ -281,6 +358,11 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${MessageFunction}"
       RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: deepseek
+        - Key: Environment
+          Value: !Ref Environment
 
   DefaultFunctionLogGroup:
     Type: AWS::Logs::LogGroup
@@ -289,6 +371,11 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${DefaultFunction}"
       RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: deepseek
+        - Key: Environment
+          Value: !Ref Environment
 
   # WebSocket API Deployment and Stage
   Deployment:
@@ -300,6 +387,9 @@ Resources:
       - DefaultRoute
     Properties:
       ApiId: !Ref WebSocketApi
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   Stage:
     Type: AWS::ApiGatewayV2::Stage
@@ -307,6 +397,9 @@ Resources:
       ApiId: !Ref WebSocketApi
       DeploymentId: !Ref Deployment
       StageName: Prod
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   # Domain Configuration for WebSocket API
   WebSocketApiDomainName:
@@ -319,6 +412,9 @@ Resources:
         - CertificateArn: !Ref WsApiCertificate
           EndpointType: REGIONAL
           SecurityPolicy: TLS_1_2
+      Tags:
+        Project: deepseek
+        Environment: !Ref Environment
 
   WebSocketApiMapping:
     Type: AWS::ApiGatewayV2::ApiMapping
@@ -329,6 +425,7 @@ Resources:
       ApiId: !Ref WebSocketApi
       DomainName: !Ref DomainName
       Stage: Prod
+      # Note: ApiMapping doesn't support tags in CloudFormation
 
   # DNS Record for WebSocket Subdomain
   WsDnsRecord:
@@ -343,6 +440,7 @@ Resources:
       AliasTarget:
         DNSName: !GetAtt WebSocketApiDomainName.RegionalDomainName
         HostedZoneId: !GetAtt WebSocketApiDomainName.RegionalHostedZoneId
+      # Note: Route53 RecordSet doesn't support tags in CloudFormation
 
 Outputs:
   WebSocketApiId:
