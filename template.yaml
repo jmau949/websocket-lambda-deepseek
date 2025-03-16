@@ -43,7 +43,7 @@ Parameters:
     
   WebSocketApiGatewayName:
     Type: String
-    Default: 'jonathanmau-websocket-api'
+    Default: 'jonathanmau-websocket-deepseek'
     Description: Name for the WebSocket API Gateway (should remain consistent across deployments)
 
 Globals:
@@ -104,9 +104,6 @@ Resources:
         Audience:
           - !Ref CognitoClientId
         Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}'
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   # DynamoDB Table for connections
   ConnectionsTable:
@@ -154,9 +151,6 @@ Resources:
         - /
         - - integrations
           - !Ref ConnectIntegration
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   ConnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -166,9 +160,6 @@ Resources:
       IntegrationUri: 
         Fn::Sub:
           arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   DisconnectRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -182,9 +173,6 @@ Resources:
         - /
         - - integrations
           - !Ref DisconnectIntegration
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   DisconnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -194,9 +182,6 @@ Resources:
       IntegrationUri: 
         Fn::Sub:
           arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectFunction.Arn}/invocations
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   MessageRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -210,9 +195,6 @@ Resources:
         - /
         - - integrations
           - !Ref MessageIntegration
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   MessageIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -222,9 +204,6 @@ Resources:
       IntegrationUri: 
         Fn::Sub:
           arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessageFunction.Arn}/invocations
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   DefaultRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -238,9 +217,6 @@ Resources:
         - /
         - - integrations
           - !Ref DefaultIntegration
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   DefaultIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -250,9 +226,6 @@ Resources:
       IntegrationUri: 
         Fn::Sub:
           arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DefaultFunction.Arn}/invocations
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   # Lambda Functions
   ConnectFunction:
@@ -386,9 +359,6 @@ Resources:
       - DefaultRoute
     Properties:
       ApiId: !Ref WebSocketApi
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
 
   Stage:
     Type: AWS::ApiGatewayV2::Stage
