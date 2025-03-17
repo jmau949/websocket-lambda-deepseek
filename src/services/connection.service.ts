@@ -1,7 +1,12 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, GetCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
-import { config } from '../config/config';
-
+import {
+  DynamoDBDocumentClient,
+  PutCommand,
+  GetCommand,
+  DeleteCommand,
+  QueryCommand,
+} from "@aws-sdk/lib-dynamodb";
+import { config } from "../config/config";
 
 export interface Connection {
   connectionId: string;
@@ -13,7 +18,6 @@ export interface Connection {
   ttl?: number;
   isAuthenticated?: boolean;
 }
-
 
 // Create DynamoDB clients
 const client = new DynamoDBClient({ region: config.region });
@@ -47,7 +51,9 @@ export const saveConnection = async (connection: Connection): Promise<void> => {
 /**
  * Get a connection from DynamoDB by connectionId
  */
-export const getConnection = async (connectionId: string): Promise<Connection | null> => {
+export const getConnection = async (
+  connectionId: string
+): Promise<Connection | null> => {
   const params = {
     TableName: config.connectionsTable,
     Key: {
@@ -57,9 +63,9 @@ export const getConnection = async (connectionId: string): Promise<Connection | 
 
   try {
     const { Item } = await docClient.send(new GetCommand(params));
-    return Item as Connection || null;
+    return (Item as Connection) || null;
   } catch (error) {
-    console.error('Error getting connection:', error);
+    console.error("Error getting connection:", error);
     throw error;
   }
 };
@@ -79,7 +85,37 @@ export const deleteConnection = async (connectionId: string): Promise<void> => {
     await docClient.send(new DeleteCommand(params));
     console.log(`Connection ${connectionId} deleted`);
   } catch (error) {
-    console.error('Error deleting connection:', error);
+    console.error("Error deleting connection:", error);
     throw error;
+  }
+};
+
+/**
+ * Get all connections for a specific user
+ */
+export const getConnectionsByUserId = async (
+  userId: string
+): Promise<Connection[]> => {
+  try {
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: config.connectionsTable,
+        IndexName: "UserIdIndex",
+        KeyConditionExpression: "userId = :userId",
+        ExpressionAttributeValues: {
+          ":userId": userId,
+        },
+      })
+    );
+
+    if (!result.Items || result.Items.length === 0) {
+      console.log(`No connections found for user ${userId}`);
+      return [];
+    }
+
+    return result.Items as Connection[];
+  } catch (error) {
+    console.error(`Error retrieving connections for user ${userId}:`, error);
+    return [];
   }
 };

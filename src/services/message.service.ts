@@ -4,6 +4,8 @@ import {
   sendMessageToClient,
   getWebSocketEndpoint,
 } from "../utils/websocket";
+import { config } from "../config/config";
+
 export interface WebSocketMessage {
   action: string;
   data?: any;
@@ -13,6 +15,7 @@ export interface WebSocketResponse {
   message: string;
   data?: any;
 }
+
 /**
  * Handle incoming WebSocket message
  */
@@ -20,14 +23,27 @@ export const handleMessage = async (
   message: WebSocketMessage,
   connectionId: string,
   domainName: string,
-  stage: string
+  stage: string,
+  apiId?: string,
+  region?: string
 ): Promise<WebSocketResponse> => {
   try {
+    console.log("Message processing started:", {
+      message,
+      connectionId,
+      domainName,
+      stage,
+      apiId,
+      region: region || config.region,
+    });
+
     // Get connection details from DynamoDB
     const connection = await getConnection(connectionId);
 
     if (!connection) {
-      throw new Error(`Connection ${connectionId} not found`);
+      console.warn(`Connection ${connectionId} not found in database`);
+    } else {
+      console.log("Connection details:", connection);
     }
 
     // Process the message based on action type
@@ -39,7 +55,7 @@ export const handleMessage = async (
         message: "Message received",
         data: {
           message: message.data?.message || "No message content",
-          sender: message.data?.sender || "Anonymous",
+          sender: message.data?.sender || connection?.userEmail || "Anonymous",
           timestamp: Date.now(),
         },
       };
@@ -55,16 +71,35 @@ export const handleMessage = async (
       };
     }
 
-    // Send response back to the client
-    const endpoint = getWebSocketEndpoint(domainName, stage);
-    const apiGatewayClient = createApiGatewayClient(endpoint);
-    await sendMessageToClient(apiGatewayClient, connectionId, response);
+    // Build the endpoint for the API Gateway Management API
+    console.log("Building WebSocket endpoint with:", {
+      domainName: domainName || connection?.domainName,
+      stage: stage || connection?.stage || config.webSocket.defaultStage,
+      apiId,
+      region: region || config.region,
+    });
 
-    // Broadcast message to all connected clients (for chat functionality)
-    if (message.action === "message") {
-      // In a real implementation, you would query DynamoDB for all active connections
-      // and send the message to each one. For local development, this is simplified.
-      console.log("Broadcasting message to other clients would happen here");
+    // Use connection's domain and stage if available (as a fallback)
+    const endpoint = getWebSocketEndpoint(
+      domainName || connection?.domainName || "",
+      stage || connection?.stage || config.webSocket.defaultStage,
+      apiId,
+      region || config.region
+    );
+    console.log("WebSocket endpoint constructed:", endpoint);
+
+    // Create the API Gateway Management API client
+    const apiGatewayClient = createApiGatewayClient(endpoint);
+
+    // Send response back to the client
+    console.log("Sending response to client:", response);
+    await sendMessageToClient(apiGatewayClient, connectionId, response);
+    console.log("Response sent successfully");
+
+    // For demonstration, broadcast could be implemented here
+    if (message.action === "message" && config.webSocket.enableBroadcast) {
+      console.log("Broadcasting feature would be implemented here");
+      // Implementation for broadcasting to all connections would go here
     }
 
     return response;

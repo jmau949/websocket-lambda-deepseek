@@ -19,17 +19,20 @@ export const handler = async (
     console.log("Message event:", JSON.stringify(event));
 
     // Extract connection information from the event
-    const { connectionId, domainName, stage } = extractConnectionInfo(event);
+    const { connectionId, domainName, stage, apiId, region } =
+      extractConnectionInfo(event);
+
     // Parse the WebSocket message
     const message = parseWebSocketEvent(event);
 
     // Handle the message
     const response = await handleMessage(
       message,
-                //@ts-ignore
       connectionId,
       domainName,
-      stage
+      stage,
+      apiId,
+      region
     );
 
     // Return a successful response

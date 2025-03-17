@@ -27,6 +27,11 @@ Parameters:
     Default: ws.jonathanmau.com
     Description: Custom domain name for WebSocket API
   
+  FrontendUrl:
+    Type: String
+    Default: ai.jonathanmau.com
+    Description: Frontend URL for CORS and origin validation
+  
   HostedZoneId:
     Type: String
     Description: Route 53 Hosted Zone ID for jonathanmau.com domain
@@ -57,6 +62,7 @@ Globals:
         COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
         COGNITO_CLIENT_ID: !Ref CognitoClientId
         SENTRY_DSN: !Ref SentryDsn
+        FRONTEND_URL: !Ref FrontendUrl
     Tags:
       Project: deepseek
       Environment: !Ref Environment
@@ -236,6 +242,7 @@ Resources:
         Variables:
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
           COGNITO_CLIENT_ID: !Ref CognitoClientId
+          FRONTEND_URL: !Ref FrontendUrl
       Tags:
         Project: deepseek
         Environment: !Ref Environment
