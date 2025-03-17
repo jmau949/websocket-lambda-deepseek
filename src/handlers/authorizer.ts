@@ -18,9 +18,21 @@ import { verifyAccessToken } from "../services/cognito.service";
 const generatePolicy = (
   principalId: string,
   effect: "Allow" | "Deny",
-  resource: string,
+  methodArn: string,
   context: Record<string, any> = {}
 ): APIGatewayAuthorizerResult => {
+  // Extract the API ID, region, and account ID from the methodArn
+  const arnParts = methodArn.split(":");
+  const apiGatewayArnTmp = arnParts[5].split("/");
+  const awsAccountId = arnParts[4];
+  const region = arnParts[3];
+  const apiId = apiGatewayArnTmp[0];
+  const stage = apiGatewayArnTmp[1];
+
+  // Create a wildcard resource for WebSocket connections
+  // This is critical for WebSocket APIs to allow all operations (connect, message, disconnect)
+  const resource = `arn:aws:execute-api:${region}:${awsAccountId}:${apiId}/${stage}/*`;
+
   // Create policy document
   const policyDocument: PolicyDocument = {
     Version: "2012-10-17",
@@ -32,6 +44,8 @@ const generatePolicy = (
       } as Statement,
     ],
   };
+
+  console.log(`Generated policy with resource: ${resource}`);
 
   // Return complete authorization response
   return {
@@ -58,23 +72,28 @@ export const handler = async (
 
     // Extract token from Cookie header
     const cookieHeader = event.headers?.Cookie || "";
-    const tokenCookie = cookieHeader
-      .split(";")
-      .find((cookie) => cookie.trim().startsWith("authToken="));
+    console.log("Cookie header:", cookieHeader);
 
-    if (!tokenCookie) {
-      console.log("No token cookie found");
-      return generatePolicy("user", "Deny", methodArn);
+    // More robust cookie parsing
+    const cookies = cookieHeader.split(";").reduce((acc, cookie) => {
+      const [name, value] = cookie.trim().split("=");
+      if (name && value) acc[name] = value;
+      return acc;
+    }, {} as Record<string, string>);
+
+    const accessToken = cookies.authToken;
+
+    if (!accessToken) {
+      console.log("No auth token found in cookies");
+      return generatePolicy("anonymous", "Deny", methodArn);
     }
-
-    const accessToken = tokenCookie.split("=")[1].trim();
 
     // Verify the token with Cognito
     const userData = await verifyAccessToken(accessToken);
 
     if (!userData) {
       console.log("Invalid or expired token");
-      return generatePolicy("user", "Deny", methodArn);
+      return generatePolicy("anonymous", "Deny", methodArn);
     }
 
     // Extract user details
@@ -85,15 +104,18 @@ export const handler = async (
     console.log("User authenticated:", { userId, email });
 
     // Generate policy allowing access with user context
-    return generatePolicy(userId, "Allow", methodArn, {
+    const result = generatePolicy(userId, "Allow", methodArn, {
       userId,
       email,
       groups: JSON.stringify(groups),
     });
+
+    console.log("Authorization result:", JSON.stringify(result, null, 2));
+    return result;
   } catch (error) {
     console.error("Authorization error:", error);
 
     // Deny by default in case of any errors
-    return generatePolicy("user", "Deny", event.methodArn);
+    return generatePolicy("anonymous", "Deny", event.methodArn);
   }
 };
