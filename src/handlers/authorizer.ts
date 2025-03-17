@@ -1,13 +1,10 @@
 import {
   APIGatewayRequestAuthorizerEvent,
   APIGatewayAuthorizerResult,
+  PolicyDocument,
+  Statement,
 } from "aws-lambda";
 import { verifyAccessToken } from "../services/cognito.service";
-
-/**
- * Type imports from AWS Lambda for policy document
- */
-import { Statement, PolicyDocument } from "aws-lambda";
 
 /**
  * Generate IAM policy for API Gateway authorization
@@ -47,7 +44,7 @@ const generatePolicy = (
 /**
  * WebSocket API authorizer handler
  *
- * This Lambda validates the Cognito access token from the query parameter
+ * This Lambda validates the Cognito access token from the Cookie header
  * and generates an IAM policy allowing or denying access to the WebSocket API.
  */
 export const handler = async (
@@ -59,14 +56,18 @@ export const handler = async (
     // Get the API Gateway resource ARN
     const methodArn = event.methodArn;
 
-    // Extract token from query parameters
-    const queryParams = event.queryStringParameters || {};
-    const accessToken = queryParams.authToken;
+    // Extract token from Cookie header
+    const cookieHeader = event.headers?.Cookie || "";
+    const tokenCookie = cookieHeader
+      .split(";")
+      .find((cookie) => cookie.trim().startsWith("authToken="));
 
-    if (!accessToken) {
-      console.log("No auth token found in query parameters");
+    if (!tokenCookie) {
+      console.log("No token cookie found");
       return generatePolicy("user", "Deny", methodArn);
     }
+
+    const accessToken = tokenCookie.split("=")[1].trim();
 
     // Verify the token with Cognito
     const userData = await verifyAccessToken(accessToken);
