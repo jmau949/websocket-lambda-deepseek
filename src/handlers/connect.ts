@@ -19,22 +19,28 @@ export const handler = async (
     console.log("Connect event:", JSON.stringify(event));
 
     // Extract connection information from the event
-    const { connectionId, domainName, stage } = extractConnectionInfo(event);
+    const connectionInfo = extractConnectionInfo(event);
 
-    // Extract user details from the authorizer context (added by Cognito authorizer)
-    const authorizer = (event.requestContext as any).authorizer || {};
+    // Type assertions to ensure TypeScript treats these as non-optional strings
+    const connectionId = connectionInfo.connectionId as string;
+    const domainName = connectionInfo.domainName as string;
+    const stage = connectionInfo.stage as string;
 
-    const claims = authorizer.jwt?.claims || {};
+    // Extract user details from the authorizer context
+    // Cast to any to access the authorizer property
+    const requestContext = event.requestContext as any;
+    const authorizer = requestContext.authorizer || {};
 
-    // Get user identity from claims
-    const userId = claims.sub || claims["cognito:username"] || "";
-    const userEmail = claims.email || "";
+    // Get user identity from authorizer context, ensuring a non-empty value
+    const userId = (authorizer.userId ||
+      authorizer.principalId ||
+      "anonymous") as string;
+    const userEmail = (authorizer.email || "") as string;
 
     console.log("Authenticated user:", { userId, userEmail });
 
     // Save the connection to DynamoDB with user info
     await saveConnection({
-      //@ts-ignore
       connectionId,
       domainName,
       stage,

@@ -283,8 +283,11 @@ Resources:
             - Effect: Allow
               Action:
                 - 'execute-api:ManageConnections'
+                - 'execute-api:Invoke'
               Resource:
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*'
+                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*'
       Tags:
         Project: deepseek
         Environment: !Ref Environment
@@ -303,8 +306,11 @@ Resources:
             - Effect: Allow
               Action:
                 - 'execute-api:ManageConnections'
+                - 'execute-api:Invoke'
               Resource:
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*'
+                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*'
       Tags:
         Project: deepseek
         Environment: !Ref Environment
@@ -318,7 +324,7 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/authorizers/*
 
-  # Additional Lambda permissions for other functions (THIS IS THE NEW PART)
+  # Additional Lambda permissions for other functions
   ConnectFunctionPermission:
     Type: AWS::Lambda::Permission
     Properties:
