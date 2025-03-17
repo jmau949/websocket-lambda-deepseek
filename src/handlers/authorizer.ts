@@ -54,7 +54,7 @@ const generatePolicy = (
 /**
  * WebSocket API authorizer handler
  *
- * This Lambda validates the Cognito access token from the Cookie header
+ * This Lambda validates the Cognito access token from the query parameter
  * and generates an IAM policy allowing or denying access to the WebSocket API.
  */
 export const handler = async (
@@ -66,18 +66,14 @@ export const handler = async (
     // Get the API Gateway resource ARN
     const methodArn = event.methodArn;
 
-    // Extract token from Cookie header
-    const cookieHeader = event.headers?.Cookie || "";
-    const tokenCookie = cookieHeader
-      .split(";")
-      .find((cookie) => cookie.trim().startsWith("authToken="));
+    // Extract token from query parameters
+    const queryParams = event.queryStringParameters || {};
+    const accessToken = queryParams.authToken;
 
-    if (!tokenCookie) {
-      console.log("No token cookie found");
+    if (!accessToken) {
+      console.log("No auth token found in query parameters");
       return generatePolicy("user", "Deny", methodArn);
     }
-
-    const accessToken = tokenCookie.split("=")[1].trim();
 
     // Verify the token with Cognito
     const userData = await verifyAccessToken(accessToken);

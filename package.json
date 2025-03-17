@@ -8,7 +8,7 @@
     "test": "jest",
     "deploy": "sam deploy",
     "watch": "tsc -w",
-    "local": "nodemon local-server.ts",
+    "dev": "nodemon local-server.ts",
     "sam:deploy-guided": "sam deploy --guided",
     "sam:deploy": "sam deploy --config-env production"
   },
