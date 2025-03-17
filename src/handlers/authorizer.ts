@@ -2,19 +2,12 @@ import {
   APIGatewayRequestAuthorizerEvent,
   APIGatewayAuthorizerResult,
 } from "aws-lambda";
-import { verifyAccessToken } from "../services/cognito.service.ts";
+import { verifyAccessToken } from "../services/cognito.service";
 
 /**
- * Interface for the policy document generated for API Gateway authorization
+ * Type imports from AWS Lambda for policy document
  */
-interface PolicyDocument {
-  Version: string;
-  Statement: {
-    Action: string;
-    Effect: string;
-    Resource: string;
-  }[];
-}
+import { Statement, PolicyDocument } from "aws-lambda";
 
 /**
  * Generate IAM policy for API Gateway authorization
@@ -39,7 +32,7 @@ const generatePolicy = (
         Action: "execute-api:Invoke",
         Effect: effect,
         Resource: resource,
-      },
+      } as Statement,
     ],
   };
 
