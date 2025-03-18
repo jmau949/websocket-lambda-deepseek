@@ -94,15 +94,15 @@ export const sendMessageToClient = async (
 
     // If the connection is gone, we can delete it
     if (
-      error.name === "GoneException" ||
-      (error.$metadata && error.$metadata.httpStatusCode === 410)
+      (error as { name?: string }).name === "GoneException" ||
+      (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+        ?.httpStatusCode === 410
     ) {
       console.log(
         `Connection ${connectionId} is gone, would delete from database here`
       );
       // Implementation to delete connection from database would go here
     }
-
     throw error;
   }
 };

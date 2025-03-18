@@ -54,7 +54,7 @@ export const handleMessage = async (
       response = {
         message: "Message received",
         data: {
-          message: message.data?.message || "No message content",
+          message: "REPLACEME LLM OUTPUT",
           sender: message.data?.sender || connection?.userEmail || "Anonymous",
           timestamp: Date.now(),
         },
