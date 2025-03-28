@@ -54,7 +54,8 @@ Parameters:
 Globals:
   Function:
     Timeout: 30
-    Runtime: nodejs18.x
+    MemorySize: 1024
+    Runtime: nodejs20.x
     Environment:
       Variables:
         NODE_ENV: !Ref Environment
