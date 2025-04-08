@@ -20,4 +20,22 @@ export const config = {
     userPoolId: process.env.COGNITO_USER_POOL_ID || "",
     clientId: process.env.COGNITO_CLIENT_ID || "",
   },
+  llm: {
+    endpoint: process.env.LLM_ENDPOINT || "localhost:50051",
+    defaultTemperature: parseFloat(
+      process.env.LLM_DEFAULT_TEMPERATURE || "0.7"
+    ),
+    defaultMaxTokens: parseInt(
+      process.env.LLM_DEFAULT_MAX_TOKENS || "2048",
+      10
+    ),
+    defaultTopP: parseFloat(process.env.LLM_DEFAULT_TOP_P || "0.95"),
+    defaultPresencePenalty: parseFloat(
+      process.env.LLM_DEFAULT_PRESENCE_PENALTY || "0"
+    ),
+    defaultFrequencyPenalty: parseFloat(
+      process.env.LLM_DEFAULT_FREQUENCY_PENALTY || "0"
+    ),
+    timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS || "30000", 10),
+  },
 };

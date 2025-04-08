@@ -4,6 +4,7 @@ import {
   sendMessageToClient,
   getWebSocketEndpoint,
 } from "../utils/websocket";
+import { streamResponse, LLMRequest } from "./llm.service";
 import { config } from "../config/config";
 
 export interface WebSocketMessage {
@@ -46,31 +47,6 @@ export const handleMessage = async (
       console.log("Connection details:", connection);
     }
 
-    // Process the message based on action type
-    let response: WebSocketResponse;
-
-    if (message.action === "message") {
-      // Handle chat messages
-      response = {
-        message: "Message received",
-        data: {
-          message: "REPLACEME LLM OUTPUT",
-          sender: message.data?.sender || connection?.userEmail || "Anonymous",
-          timestamp: Date.now(),
-        },
-      };
-    } else {
-      // Default response for other actions
-      response = {
-        message: "Unknown action",
-        data: {
-          message: "Hello from WebSocket Server",
-          sender: "System",
-          timestamp: Date.now(),
-        },
-      };
-    }
-
     // Build the endpoint for the API Gateway Management API
     console.log("Building WebSocket endpoint with:", {
       domainName: domainName || connection?.domainName,
@@ -91,10 +67,92 @@ export const handleMessage = async (
     // Create the API Gateway Management API client
     const apiGatewayClient = createApiGatewayClient(endpoint);
 
-    // Send response back to the client
-    console.log("Sending response to client:", response);
-    await sendMessageToClient(apiGatewayClient, connectionId, response);
-    console.log("Response sent successfully");
+    // Process the message based on action type
+    let response: WebSocketResponse;
+
+    if (message.action === "message") {
+      // Send an initial acknowledgment response
+      await sendMessageToClient(apiGatewayClient, connectionId, {
+        action: "message_received",
+        data: {
+          message: "Processing your request...",
+          timestamp: Date.now(),
+        },
+      });
+
+      try {
+        // Extract prompt and any LLM parameters from the message
+        const prompt = message.data?.message || "";
+        const llmParameters = message.data?.parameters || {};
+        const sender =
+          message.data?.sender || connection?.userEmail || "Anonymous";
+
+        // Create LLM request
+        const llmRequest: LLMRequest = {
+          prompt,
+          parameters: llmParameters,
+        };
+
+        // Stream responses from the LLM service
+        let fullResponse = "";
+
+        await streamResponse(llmRequest, async (chunk) => {
+          console.log("fullResponse1111", fullResponse);
+          fullResponse += chunk.text;
+
+          // Send the chunk to the client
+          await sendMessageToClient(apiGatewayClient, connectionId, {
+            action: "llm_response_chunk",
+            data: {
+              text: chunk.text,
+              isComplete: chunk.isComplete,
+              timestamp: Date.now(),
+            },
+          });
+        });
+
+        // Send the completed response message
+        response = {
+          message: "LLM response complete",
+          data: {
+            message: fullResponse,
+            sender,
+            isComplete: true,
+            timestamp: Date.now(),
+          },
+        };
+      } catch (error) {
+        console.error("Error processing LLM request:", error);
+
+        // Send error response
+        response = {
+          message: "Error processing request",
+          data: {
+            message:
+              "There was an error processing your request. Please try again.",
+            sender: "System",
+            error: true,
+            timestamp: Date.now(),
+          },
+        };
+
+        // Send final error message
+        await sendMessageToClient(apiGatewayClient, connectionId, response);
+      }
+    } else {
+      // Default response for other actions
+      response = {
+        message: "Unknown action",
+        data: {
+          message: "Hello from WebSocket Server",
+          sender: "System",
+          timestamp: Date.now(),
+        },
+      };
+
+      // Send response back to the client for non-message actions
+      await sendMessageToClient(apiGatewayClient, connectionId, response);
+    }
 
     // For demonstration, broadcast could be implemented here
     if (message.action === "message" && config.webSocket.enableBroadcast) {
