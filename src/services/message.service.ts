@@ -32,7 +32,14 @@ const formatConversationHistory = (history: ChatMessage[]): string => {
     return "";
   }
 
-  return history
+  // Exclude the most recent message since it will be added separately in the prompt
+  const historyWithoutLatest = history.slice(0, -1);
+
+  if (historyWithoutLatest.length === 0) {
+    return "";
+  }
+
+  return historyWithoutLatest
     .map((msg) => {
       const role = msg.role === "user" ? "Human" : "Assistant";
       return `${role}: ${msg.content}`;
@@ -154,9 +161,15 @@ export const handleMessage = async (
         );
 
         // Create the prompt with conversation history
+        // Add system instruction to prevent repeating names
+        const systemInstruction =
+          "Respond to the user naturally. If they introduce themselves with their name, acknowledge it without repeating the phrase 'my name is' in your response.";
+
         const fullPrompt = conversationHistoryText
-          ? `${conversationHistoryText}\n\nHuman: ${userMessage}\n\nAssistant:`
-          : `Human: ${userMessage}\n\nAssistant:`;
+          ? `${systemInstruction}\n\n${conversationHistoryText}\n\nHuman: ${userMessage}\n\nAssistant:`
+          : `${systemInstruction}\n\nHuman: ${userMessage}\n\nAssistant:`;
+
+        console.log("fullPrompt", fullPrompt);
 
         // Create LLM request
         const llmRequest: LLMRequest = {
