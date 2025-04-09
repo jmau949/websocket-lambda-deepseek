@@ -161,13 +161,9 @@ export const handleMessage = async (
         );
 
         // Create the prompt with conversation history
-        // Add system instruction to prevent repeating names
-        const systemInstruction =
-          "Respond to the user naturally. If they introduce themselves with their name, acknowledge it without repeating the phrase 'my name is' in your response.";
-
         const fullPrompt = conversationHistoryText
-          ? `${systemInstruction}\n\n${conversationHistoryText}\n\nHuman: ${userMessage}\n\nAssistant:`
-          : `${systemInstruction}\n\nHuman: ${userMessage}\n\nAssistant:`;
+          ? `${conversationHistoryText}\n\nHuman: ${userMessage}\n\nAssistant:`
+          : `Human: ${userMessage}\n\nAssistant:`;
 
         console.log("fullPrompt", fullPrompt);
 
