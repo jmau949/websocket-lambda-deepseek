@@ -37,6 +37,15 @@ export const createChatSession = async (
   const timestamp = Date.now();
   const ttl = Math.floor(timestamp / 1000) + config.chatSessionTtl;
 
+  // First check if session already exists to prevent duplication
+  const existingSession = await getChatSession(connectionId);
+  if (existingSession) {
+    console.log(
+      `Chat session already exists for connection ${connectionId}, returning existing session`
+    );
+    return existingSession;
+  }
+
   const session: ChatSession = {
     connectionId,
     userId,
@@ -75,7 +84,12 @@ export const getChatSession = async (
   };
 
   try {
+    console.log(`Getting chat session for connectionId: ${connectionId}`);
     const { Item } = await docClient.send(new GetCommand(params));
+    const found = Item ? true : false;
+    console.log(
+      `Chat session ${found ? "found" : "not found"} for ${connectionId}`
+    );
     return (Item as ChatSession) || null;
   } catch (error) {
     console.error("Error getting chat session:", error);
@@ -94,12 +108,18 @@ export const addMessageToChatSession = async (
     // First, check if the session exists
     let session = await getChatSession(connectionId);
 
-    // If session doesn't exist, create a new one (need userId though)
+    // If session doesn't exist, we can't add a message
+    // The caller should handle this by creating a session first
     if (!session) {
       console.log(
         `Chat session not found for ${connectionId}, cannot add message`
       );
       return null;
+    }
+
+    // Make sure conversationHistory is initialized
+    if (!session.conversationHistory) {
+      session.conversationHistory = [];
     }
 
     const updatedSession = {
@@ -119,10 +139,12 @@ export const addMessageToChatSession = async (
         ":history": updatedSession.conversationHistory,
         ":updatedAt": updatedSession.updatedAt,
       },
-      ReturnValues: "ALL_NEW" as const, // Fixed this line with type assertion
+      ReturnValues: "ALL_NEW" as const,
     };
 
+    console.log(`Updating chat session with new message for ${connectionId}`);
     const result = await docClient.send(new UpdateCommand(params));
+    console.log(`Message added to chat session ${connectionId}`);
     return result.Attributes as ChatSession;
   } catch (error) {
     console.error("Error adding message to chat session:", error);
@@ -137,6 +159,15 @@ export const clearChatSessionHistory = async (
   connectionId: string
 ): Promise<void> => {
   try {
+    // First check if the session exists
+    const session = await getChatSession(connectionId);
+    if (!session) {
+      console.log(
+        `Chat session not found for ${connectionId}, cannot clear history`
+      );
+      return;
+    }
+
     const params = {
       TableName: config.chatSessionsTable,
       Key: {

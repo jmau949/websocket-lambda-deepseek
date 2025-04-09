@@ -53,12 +53,10 @@ export const handleMessage = async (
 ): Promise<WebSocketResponse> => {
   try {
     console.log("Message processing started:", {
-      message,
+      action: message.action,
       connectionId,
       domainName,
       stage,
-      apiId,
-      region: region || config.region,
     });
 
     // Get connection details from DynamoDB
@@ -67,18 +65,11 @@ export const handleMessage = async (
     if (!connection) {
       console.warn(`Connection ${connectionId} not found in database`);
     } else {
-      console.log("Connection details:", connection);
+      console.log("Connection details found:", connection.userId);
     }
 
     // Build the endpoint for the API Gateway Management API
-    console.log("Building WebSocket endpoint with:", {
-      domainName: domainName || connection?.domainName,
-      stage: stage || connection?.stage || config.webSocket.defaultStage,
-      apiId,
-      region: region || config.region,
-    });
-
-    // Use connection's domain and stage if available (as a fallback)
+    console.log("Building WebSocket endpoint");
     const endpoint = getWebSocketEndpoint(
       domainName || connection?.domainName || "",
       stage || connection?.stage || config.webSocket.defaultStage,
@@ -107,14 +98,25 @@ export const handleMessage = async (
         // Extract prompt and any LLM parameters from the message
         const userMessage = message.data?.message || "";
         const llmParameters = message.data?.parameters || {};
-        const userId = connection?.userId || "anonymous";
+        const userId =
+          connection?.userId || `user-${connectionId.substring(0, 8)}`;
         const sender =
           message.data?.sender || connection?.userEmail || "Anonymous";
 
-        // Get or create a chat session for this connection
+        console.log(
+          `Looking for chat session with connectionId: ${connectionId}`
+        );
+
+        // Get the existing chat session or create a new one if needed
         let chatSession = await getChatSession(connectionId);
+
         if (!chatSession) {
+          console.log(
+            `No chat session found for ${connectionId}, creating a new one`
+          );
           chatSession = await createChatSession(connectionId, userId);
+        } else {
+          console.log(`Found existing chat session for ${connectionId}`);
         }
 
         // Handle special commands
@@ -143,11 +145,12 @@ export const handleMessage = async (
           timestamp: Date.now(),
         };
 
+        console.log(`Adding user message to chat session: ${connectionId}`);
         await addMessageToChatSession(connectionId, userChatMessage);
 
         // Format conversation history for the LLM
         const conversationHistoryText = formatConversationHistory(
-          chatSession.conversationHistory
+          chatSession.conversationHistory || []
         );
 
         // Create the prompt with conversation history
@@ -185,6 +188,9 @@ export const handleMessage = async (
           timestamp: Date.now(),
         };
 
+        console.log(
+          `Adding assistant response to chat session: ${connectionId}`
+        );
         await addMessageToChatSession(connectionId, assistantChatMessage);
 
         // Send the completed response message
