@@ -6,6 +6,13 @@ import {
 } from "../utils/websocket";
 import { streamResponse, LLMRequest } from "./llm.service";
 import { config } from "../config/config";
+import {
+  getChatSession,
+  createChatSession,
+  addMessageToChatSession,
+  clearChatSessionHistory,
+  ChatMessage,
+} from "./chat-session.service";
 
 export interface WebSocketMessage {
   action: string;
@@ -16,6 +23,22 @@ export interface WebSocketResponse {
   message: string;
   data?: any;
 }
+
+/**
+ * Format conversation history for LLM prompt
+ */
+const formatConversationHistory = (history: ChatMessage[]): string => {
+  if (!history || history.length === 0) {
+    return "";
+  }
+
+  return history
+    .map((msg) => {
+      const role = msg.role === "user" ? "Human" : "Assistant";
+      return `${role}: ${msg.content}`;
+    })
+    .join("\n\n");
+};
 
 /**
  * Handle incoming WebSocket message
@@ -82,14 +105,59 @@ export const handleMessage = async (
 
       try {
         // Extract prompt and any LLM parameters from the message
-        const prompt = message.data?.message || "";
+        const userMessage = message.data?.message || "";
         const llmParameters = message.data?.parameters || {};
+        const userId = connection?.userId || "anonymous";
         const sender =
           message.data?.sender || connection?.userEmail || "Anonymous";
 
+        // Get or create a chat session for this connection
+        let chatSession = await getChatSession(connectionId);
+        if (!chatSession) {
+          chatSession = await createChatSession(connectionId, userId);
+        }
+
+        // Handle special commands
+        if (userMessage.trim().toLowerCase() === "/clear") {
+          await clearChatSessionHistory(connectionId);
+
+          // Send confirmation message
+          response = {
+            message: "Chat history cleared",
+            data: {
+              message:
+                "Chat history has been cleared. Starting a new conversation.",
+              sender: "System",
+              timestamp: Date.now(),
+            },
+          };
+
+          await sendMessageToClient(apiGatewayClient, connectionId, response);
+          return response;
+        }
+
+        // Add user message to chat history
+        const userChatMessage: ChatMessage = {
+          role: "user",
+          content: userMessage,
+          timestamp: Date.now(),
+        };
+
+        await addMessageToChatSession(connectionId, userChatMessage);
+
+        // Format conversation history for the LLM
+        const conversationHistoryText = formatConversationHistory(
+          chatSession.conversationHistory
+        );
+
+        // Create the prompt with conversation history
+        const fullPrompt = conversationHistoryText
+          ? `${conversationHistoryText}\n\nHuman: ${userMessage}\n\nAssistant:`
+          : `Human: ${userMessage}\n\nAssistant:`;
+
         // Create LLM request
         const llmRequest: LLMRequest = {
-          prompt,
+          prompt: fullPrompt,
           parameters: llmParameters,
         };
 
@@ -97,7 +165,6 @@ export const handleMessage = async (
         let fullResponse = "";
 
         await streamResponse(llmRequest, async (chunk) => {
-          console.log("fullResponse1111", fullResponse);
           fullResponse += chunk.text;
 
           // Send the chunk to the client
@@ -110,6 +177,15 @@ export const handleMessage = async (
             },
           });
         });
+
+        // Add assistant response to chat history
+        const assistantChatMessage: ChatMessage = {
+          role: "assistant",
+          content: fullResponse,
+          timestamp: Date.now(),
+        };
+
+        await addMessageToChatSession(connectionId, assistantChatMessage);
 
         // Send the completed response message
         response = {
@@ -139,6 +215,21 @@ export const handleMessage = async (
         // Send final error message
         await sendMessageToClient(apiGatewayClient, connectionId, response);
       }
+    } else if (message.action === "new_conversation") {
+      // Clear the conversation history
+      await clearChatSessionHistory(connectionId);
+
+      response = {
+        message: "New conversation started",
+        data: {
+          message: "Starting a new conversation.",
+          sender: "System",
+          timestamp: Date.now(),
+        },
+      };
+
+      // Send response back to client
+      await sendMessageToClient(apiGatewayClient, connectionId, response);
     } else {
       // Default response for other actions
       response = {

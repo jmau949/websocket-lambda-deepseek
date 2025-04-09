@@ -1,9 +1,11 @@
 export const config = {
   // DynamoDB
   connectionsTable: process.env.CONNECTIONS_TABLE || "ConnectionsTable",
+  chatSessionsTable: process.env.CHAT_SESSIONS_TABLE || "ChatSessionsTable",
   frontendUrl: process.env.FRONTEND_URL || "ai.jonathanmau.com",
   // Connection TTL in seconds (default: 2 weeks)
   connectionTtl: 1209600,
+  chatSessionTtl: 1209600,
 
   // AWS region
   region: process.env.AWS_REGION || "us-east-1",

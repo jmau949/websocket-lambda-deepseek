@@ -4,6 +4,7 @@ import {
 } from "aws-lambda";
 import { extractConnectionInfo, createResponse } from "../utils/lambda";
 import { saveConnection } from "../services/connection.service";
+import { createChatSession } from "../services/chat-session.service";
 
 /**
  * Handle WebSocket $connect event
@@ -49,6 +50,15 @@ export const handler = async (
       userEmail,
       isAuthenticated: true,
     });
+
+    // Create a new chat session for this connection
+    try {
+      await createChatSession(connectionId, userId);
+      console.log(`Chat session created for connection ${connectionId}`);
+    } catch (error) {
+      // Log error but continue with connection process
+      console.error("Error creating chat session:", error);
+    }
 
     // Return a successful response
     return createResponse(200, { message: "Connected" });

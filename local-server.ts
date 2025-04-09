@@ -19,6 +19,7 @@ const app = fastify({
 
 // In-memory connection storage
 const connections = new Map<string, any>();
+const chatSessions = new Map<string, any>();
 const sockets = new Map<string, WebSocket>();
 
 // Import the WebSocket handlers
@@ -34,6 +35,8 @@ import {
   PutCommand,
   GetCommand,
   DeleteCommand,
+  UpdateCommand,
+  QueryCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
   ApiGatewayManagementApiClient,
@@ -51,27 +54,104 @@ DynamoDBDocumentClient.prototype.send = async function (command) {
   console.log("Mock DynamoDB Document command:", command.constructor.name);
 
   if (command instanceof PutCommand) {
+    const tableName = command.input.TableName;
     const item = command.input.Item;
-    connections.set(item?.connectionId, item);
-    console.log(`Saved connection: ${item?.connectionId}`);
+
+    if (
+      tableName === "WebSocketConnectionsTable" ||
+      tableName?.includes("connection")
+    ) {
+      connections.set(item?.connectionId, item);
+      console.log(`Saved connection: ${item?.connectionId}`);
+    } else if (tableName === "chat-sessions" || tableName?.includes("chat")) {
+      chatSessions.set(item?.connectionId, item);
+      console.log(`Saved chat session: ${item?.connectionId}`);
+    }
+
     return {};
   }
 
   if (command instanceof GetCommand) {
+    const tableName = command.input.TableName;
     const connectionId = command.input.Key?.connectionId;
-    const connection = connections.get(connectionId);
-    console.log(
-      `Retrieved connection: ${connectionId}`,
-      connection ? "Found" : "Not found"
-    );
-    return { Item: connection };
+
+    if (
+      tableName === "WebSocketConnectionsTable" ||
+      tableName?.includes("connection")
+    ) {
+      const connection = connections.get(connectionId);
+      console.log(
+        `Retrieved connection: ${connectionId}`,
+        connection ? "Found" : "Not found"
+      );
+      return { Item: connection };
+    } else if (tableName === "chat-sessions" || tableName?.includes("chat")) {
+      const session = chatSessions.get(connectionId);
+      console.log(
+        `Retrieved chat session: ${connectionId}`,
+        session ? "Found" : "Not found"
+      );
+      return { Item: session };
+    }
+
+    return { Item: null };
   }
 
   if (command instanceof DeleteCommand) {
+    const tableName = command.input.TableName;
     const connectionId = command.input.Key?.connectionId;
-    connections.delete(connectionId);
-    console.log(`Deleted connection: ${connectionId}`);
+
+    if (
+      tableName === "WebSocketConnectionsTable" ||
+      tableName?.includes("connection")
+    ) {
+      connections.delete(connectionId);
+      console.log(`Deleted connection: ${connectionId}`);
+    } else if (tableName === "chat-sessions" || tableName?.includes("chat")) {
+      chatSessions.delete(connectionId);
+      console.log(`Deleted chat session: ${connectionId}`);
+    }
+
     return {};
+  }
+
+  if (command instanceof UpdateCommand) {
+    const tableName = command.input.TableName;
+    const connectionId = command.input.Key?.connectionId;
+
+    if (tableName === "chat-sessions" || tableName?.includes("chat")) {
+      const session = chatSessions.get(connectionId);
+      if (session) {
+        // Handle the update expression
+        if (command.input.UpdateExpression?.includes("conversationHistory")) {
+          const history = command.input.ExpressionAttributeValues?.[":history"];
+          const updatedAt =
+            command.input.ExpressionAttributeValues?.[":updatedAt"];
+
+          session.conversationHistory = history;
+          session.updatedAt = updatedAt;
+
+          chatSessions.set(connectionId, session);
+          console.log(`Updated chat session history for: ${connectionId}`);
+        } else if (command.input.UpdateExpression?.includes("empty")) {
+          session.conversationHistory = [];
+          session.updatedAt =
+            command.input.ExpressionAttributeValues?.[":updatedAt"];
+
+          chatSessions.set(connectionId, session);
+          console.log(`Cleared chat session history for: ${connectionId}`);
+        }
+
+        return { Attributes: session };
+      }
+    }
+
+    return {};
+  }
+
+  if (command instanceof QueryCommand) {
+    // Handle any query operations as needed
+    return { Items: [] };
   }
 
   return {};
@@ -97,6 +177,11 @@ ApiGatewayManagementApiClient.prototype.send = async function (command) {
   return {};
 };
 
+// Make config available to the handlers
+// Ensure your config has these values or they'll be populated with defaults
+process.env.CONNECTIONS_TABLE = "WebSocketConnectionsTable";
+process.env.CHAT_SESSIONS_TABLE = "chat-sessions";
+
 // WebSocket server
 const wss = new (WebSocket as any).Server({ noServer: true });
 
@@ -114,10 +199,16 @@ function createApiGatewayEvent(
       routeKey,
       domainName: "localhost",
       stage: "local",
+      apiId: "local",
       identity: {
         sourceIp: "127.0.0.1",
       },
-      requestTimeEpoch: Date.now()
+      requestTimeEpoch: Date.now(),
+      // Add authorizer context for user info
+      authorizer: {
+        userId: `local-user-${connectionId.substring(0, 8)}`,
+        email: `user-${connectionId.substring(0, 6)}@example.com`,
+      },
     },
     isBase64Encoded: false,
     body,
@@ -129,7 +220,7 @@ app.server?.on("upgrade", async (request: any, socket: any, head: any) => {
   try {
     // Generate a connection ID
     const connectionId = uuidv4();
-    
+
     // Proceed with WebSocket upgrade
     wss.handleUpgrade(request, socket, head, (ws: WebSocket) => {
       // Emit connection event with the connection ID
@@ -151,10 +242,7 @@ wss.on("connection", async (ws: WebSocket, connectionId: string) => {
 
   try {
     // Create a connect event
-    const connectEvent = createApiGatewayEvent(
-      "$connect",
-      connectionId
-    );
+    const connectEvent = createApiGatewayEvent("$connect", connectionId);
 
     // Call the connect handler
     await connectHandler(connectEvent);
@@ -182,6 +270,9 @@ wss.on("connection", async (ws: WebSocket, connectionId: string) => {
 
         // Route to the appropriate handler
         if (parsedMessage.action === "message") {
+          await messageHandler(messageEvent);
+        } else if (parsedMessage.action === "new_conversation") {
+          // Handle new_conversation action - already handled in message handler
           await messageHandler(messageEvent);
         } else {
           await defaultHandler(messageEvent);
@@ -230,7 +321,41 @@ app.get("/", (request, reply) => {
   reply.send({
     message: "WebSocket server is running",
     activeConnections: connections.size,
+    activeChatSessions: chatSessions.size,
   });
+});
+
+// Add a route to inspect chat sessions (for debugging)
+app.get("/chat-sessions", (request, reply) => {
+  const sessionsInfo = Array.from(chatSessions.entries()).map(
+    ([id, session]) => ({
+      connectionId: id,
+      userId: session.userId,
+      messageCount: session.conversationHistory
+        ? session.conversationHistory.length
+        : 0,
+      createdAt: new Date(session.createdAt).toISOString(),
+      updatedAt: new Date(session.updatedAt).toISOString(),
+    })
+  );
+
+  reply.send({
+    count: chatSessions.size,
+    sessions: sessionsInfo,
+  });
+});
+
+// Add a route to inspect a specific chat session
+app.get("/chat-sessions/:id", (request, reply) => {
+  const params = request.params as { id: string };
+  const session = chatSessions.get(params.id);
+
+  if (!session) {
+    reply.status(404).send({ error: "Chat session not found" });
+    return;
+  }
+
+  reply.send(session);
 });
 
 // Start the server
