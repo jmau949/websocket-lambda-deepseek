@@ -3,7 +3,8 @@
  */
 import "dotenv/config";
 import fastify from "fastify";
-import WebSocket, { Server as WebSocketServer } from "ws";
+import WebSocket from "ws";
+import { WebSocketServer } from "ws";
 import { v4 as uuidv4 } from "uuid";
 import { APIGatewayProxyWebsocketEventV2 } from "aws-lambda";
 
