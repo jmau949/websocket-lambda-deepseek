@@ -23,6 +23,7 @@ export const config = {
     clientId: process.env.COGNITO_CLIENT_ID || "",
   },
   llm: {
+    // Use service discovery endpoint for the DeepSeek LLM service in VPC
     endpoint: process.env.LLM_ENDPOINT || "localhost:50051",
     defaultTemperature: parseFloat(
       process.env.LLM_DEFAULT_TEMPERATURE || "0.7"

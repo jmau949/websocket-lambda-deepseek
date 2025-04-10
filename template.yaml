@@ -50,6 +50,30 @@ Parameters:
     Type: String
     Default: 'jonathanmau-websocket-deepseek'
     Description: Name for the WebSocket API Gateway (should remain consistent across deployments)
+    
+  LlmServiceNamespace:
+    Type: String
+    Default: 'ai-services.local'
+    Description: Service discovery namespace for the DeepSeek LLM service
+    
+  LlmServiceName:
+    Type: String
+    Default: 'deepseek-llm'
+    Description: Service discovery service name for the DeepSeek LLM service
+    
+  VpcId:
+    Type: String
+    Description: VPC ID where the DeepSeek LLM service is running
+    
+  LambdaSecurityGroupId:
+    Type: String
+    Description: Security Group ID for Lambda functions to access DeepSeek LLM service
+
+  # Comma-separated list of subnet IDs
+  SubnetIds:
+    Type: String
+    Description: Comma-separated list of subnet IDs for Lambda function VPC configuration
+    Default: ""
 
 Globals:
   Function:
@@ -81,6 +105,29 @@ Resources:
       DomainValidationOptions:
         - DomainName: !Ref DomainName
           HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Project
+          Value: deepseek
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Security Group for Lambda VPC access
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda functions to access DeepSeek LLM service
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - Description: Allow outbound gRPC traffic to DeepSeek LLM service
+          IpProtocol: tcp
+          FromPort: 50051
+          ToPort: 50051
+          CidrIp: 0.0.0.0/0
+        - Description: Allow outbound HTTPS traffic for AWS services
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
       Tags:
         - Key: Project
           Value: deepseek
@@ -321,6 +368,15 @@ Resources:
       Handler: handlers/message.handler
       Layers:
         - !Ref SentryLambdaLayerArn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupId
+        SubnetIds: !Split 
+          - ','
+          - !Ref SubnetIds
+      Environment:
+        Variables:
+          LLM_ENDPOINT: !Sub "${LlmServiceName}.${LlmServiceNamespace}"
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ConnectionsTable
@@ -335,6 +391,13 @@ Resources:
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*'
                 - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*'
+        # Add permissions for service discovery
+        - AWSLambdaVPCAccessExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action:
+                - 'servicediscovery:DiscoverInstances'
+              Resource: '*'
       Tags:
         Project: deepseek
         Environment: !Ref Environment
