@@ -25,7 +25,10 @@ export interface LLMResponse {
 }
 
 interface DiscoveredInstance {
-  Attributes?: Record<string, string>;
+  attributes: {
+    AWS_INSTANCE_IPV4: string;
+    AWS_INSTANCE_PORT: string;
+  };
 }
 
 // Store the client instance
@@ -61,25 +64,23 @@ const discoverLlmService = async (): Promise<string> => {
     });
 
     // Discover instances
-    const discoverCommand = new DiscoverInstancesCommand({
+    const params = {
       NamespaceName: namespaceName,
       ServiceName: serviceName,
       MaxResults: 1, // Just need one healthy instance
-    });
+    };
 
-    const response = await serviceDiscovery.send(discoverCommand);
+    const response = await serviceDiscovery.send(
+      new DiscoverInstancesCommand(params)
+    );
 
     if (!response.Instances || response.Instances.length === 0) {
       throw new Error(`No instances found for ${serviceName}.${namespaceName}`);
     }
 
     const instance = response.Instances[0] as DiscoveredInstance;
-    if (!instance.Attributes) {
-      throw new Error("Instance attributes missing");
-    }
-
-    const ipv4 = instance.Attributes["AWS_INSTANCE_IPV4"];
-    const port = instance.Attributes["AWS_INSTANCE_PORT"] || "50051";
+    const ipv4 = instance.attributes.AWS_INSTANCE_IPV4;
+    const port = instance.attributes.AWS_INSTANCE_PORT || "50051";
 
     const endpoint = `${ipv4}:${port}`;
     console.log(`LLM service discovered at: ${endpoint}`);
