@@ -215,12 +215,27 @@ export const handleMessage = async (
       } catch (error) {
         console.error("Error processing LLM request:", error);
 
+        // Check if the error is a connection failure
+        let errorMessage =
+          "There was an error processing your request. Please try again.";
+        if (error instanceof Error) {
+          // Check for connection failure messages
+          if (
+            error.message.includes("Failed to connect") ||
+            error.message.includes("connection failed") ||
+            error.message.includes("Connection refused")
+          ) {
+            errorMessage =
+              "LLM service connection failed. Please check that the LLM service is running and try again.";
+            console.error("LLM connection failure:", error.message);
+          }
+        }
+
         // Send error response
         response = {
           message: "Error processing request",
           data: {
-            message:
-              "There was an error processing your request. Please try again.",
+            message: errorMessage,
             sender: "System",
             error: true,
             timestamp: Date.now(),
