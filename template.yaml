@@ -366,6 +366,7 @@ Resources:
     Properties:
       CodeUri: dist/
       Handler: handlers/message.handler
+      Timeout: 900
       Layers:
         - !Ref SentryLambdaLayerArn
       VpcConfig:

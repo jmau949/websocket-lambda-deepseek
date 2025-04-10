@@ -34,8 +34,8 @@ interface DiscoveredInstance {
 // Store the client instance
 let llmClient: any = null;
 let connectionAttempts = 0;
-const MAX_CONNECTION_ATTEMPTS = 3;
-const RETRY_DELAY_MS = 1000;
+const MAX_CONNECTION_ATTEMPTS = 1;
+const RETRY_DELAY_MS = 500;
 
 /**
  * Discover LLM service instance using AWS Service Discovery
