@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: Fastify WebSocket API with API Gateway, Lambda and DynamoDB
 
@@ -11,63 +11,68 @@ Parameters:
       - staging
       - production
     Description: Environment type
-  
+
   CognitoUserPoolId:
     Type: String
     Description: Cognito User Pool ID
-    Default: ''
-  
+    Default: ""
+
   CognitoClientId:
     Type: String
     Description: Cognito Client ID
-    Default: ''
-  
+    Default: ""
+
   DomainName:
     Type: String
     Default: ws.jonathanmau.com
     Description: Custom domain name for WebSocket API
-  
+
   FrontendUrl:
     Type: String
     Default: ai.jonathanmau.com
     Description: Frontend URL for CORS and origin validation
-  
+
   HostedZoneId:
     Type: String
     Description: Route 53 Hosted Zone ID for jonathanmau.com domain
-    
+
   SentryDsn:
     Type: String
-    Default: ''
+    Default: ""
     Description: Sentry DSN
-    
+
   SentryLambdaLayerArn:
     Type: String
-    Default: ''
+    Default: ""
     Description: Sentry Lambda Layer ARN
-    
+
   WebSocketApiGatewayName:
     Type: String
-    Default: 'jonathanmau-websocket-deepseek'
+    Default: "jonathanmau-websocket-deepseek"
     Description: Name for the WebSocket API Gateway (should remain consistent across deployments)
-    
+
   LlmServiceNamespace:
     Type: String
-    Default: 'ai-services.local'
+    Default: "ai-services.local"
     Description: Service discovery namespace for the DeepSeek LLM service
-    
+
   LlmServiceName:
     Type: String
-    Default: 'deepseek-llm'
+    Default: "deepseek-llm"
     Description: Service discovery service name for the DeepSeek LLM service
-    
+
   VpcId:
     Type: String
     Description: VPC ID where the DeepSeek LLM service is running
-    
+
   LambdaSecurityGroupId:
     Type: String
     Description: Security Group ID for Lambda functions to access DeepSeek LLM service
+
+  ApiGatewayEndpointSecurityGroupId:
+    Type: String
+    Description: Security Group ID for the API Gateway endpoint
+    Default: ""
 
   # Comma-separated list of subnet IDs
   SubnetIds:
@@ -154,8 +159,8 @@ Resources:
       ApiId: !Ref WebSocketApi
       AuthorizerType: REQUEST
       AuthorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
-      IdentitySource: 
-        - 'route.request.header.Cookie'
+      IdentitySource:
+        - "route.request.header.Cookie"
 
   # DynamoDB Table for connections
   ConnectionsTable:
@@ -188,7 +193,7 @@ Resources:
           Value: deepseek
         - Key: Environment
           Value: !Ref Environment
-          
+
   # DynamoDB Table for chat sessions
   ChatSessionsTable:
     Type: AWS::DynamoDB::Table
@@ -241,9 +246,8 @@ Resources:
     Properties:
       ApiId: !Ref WebSocketApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: 
-        Fn::Sub:
-          arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations
+      IntegrationUri:
+        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations
 
   DisconnectRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -263,9 +267,8 @@ Resources:
     Properties:
       ApiId: !Ref WebSocketApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: 
-        Fn::Sub:
-          arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectFunction.Arn}/invocations
+      IntegrationUri:
+        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectFunction.Arn}/invocations
 
   MessageRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -285,9 +288,8 @@ Resources:
     Properties:
       ApiId: !Ref WebSocketApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: 
-        Fn::Sub:
-          arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessageFunction.Arn}/invocations
+      IntegrationUri:
+        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessageFunction.Arn}/invocations
 
   DefaultRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -307,9 +309,8 @@ Resources:
     Properties:
       ApiId: !Ref WebSocketApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: 
-        Fn::Sub:
-          arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DefaultFunction.Arn}/invocations
+      IntegrationUri:
+        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DefaultFunction.Arn}/invocations
 
   # Authorizer Lambda Function
   AuthorizerFunction:
@@ -372,8 +373,9 @@ Resources:
       VpcConfig:
         SecurityGroupIds:
           - !Ref LambdaSecurityGroupId
-        SubnetIds: !Split 
-          - ','
+          - !Ref ApiGatewayEndpointSecurityGroupId
+        SubnetIds: !Split
+          - ","
           - !Ref SubnetIds
       Environment:
         Variables:
@@ -386,19 +388,19 @@ Resources:
         - Statement:
             - Effect: Allow
               Action:
-                - 'execute-api:ManageConnections'
-                - 'execute-api:Invoke'
+                - "execute-api:ManageConnections"
+                - "execute-api:Invoke"
               Resource:
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*'
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*'
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*"
         # Add permissions for service discovery
         - AWSLambdaVPCAccessExecutionRole
         - Statement:
             - Effect: Allow
               Action:
-                - 'servicediscovery:DiscoverInstances'
-              Resource: '*'
+                - "servicediscovery:DiscoverInstances"
+              Resource: "*"
       Tags:
         Project: deepseek
         Environment: !Ref Environment
@@ -418,12 +420,12 @@ Resources:
         - Statement:
             - Effect: Allow
               Action:
-                - 'execute-api:ManageConnections'
-                - 'execute-api:Invoke'
+                - "execute-api:ManageConnections"
+                - "execute-api:Invoke"
               Resource:
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*'
-                - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*'
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*"
       Tags:
         Project: deepseek
         Environment: !Ref Environment
@@ -620,7 +622,7 @@ Outputs:
     Value: !GetAtt ConnectionsTable.Arn
     Export:
       Name: WebSocketConnectionsTableArn
-      
+
   ChatSessionsTableArn:
     Description: "DynamoDB Chat Sessions Table ARN"
     Value: !GetAtt ChatSessionsTable.Arn
@@ -632,7 +634,7 @@ Outputs:
     Value: !Ref WsApiCertificate
     Export:
       Name: WebSocketApiCertificateArn
-      
+
   WebSocketApiDomainNameOutput:
     Description: "Domain name for the WebSocket API Gateway"
     Value: !GetAtt WebSocketApiDomainName.RegionalDomainName
