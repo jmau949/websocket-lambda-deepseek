@@ -51,11 +51,38 @@ Parameters:
     Default: "jonathanmau-websocket-deepseek"
     Description: Name for the WebSocket API Gateway (should remain consistent across deployments)
 
-  # Subnet IDs - Comma-separated list
-  SubnetIds:
+  # Parameters for shared VPC resources
+  LambdaSecurityGroupId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesLambdaClientSgId
+    Description: Security Group ID for Lambda functions connecting to LLM Service
+
+  PrivateSubnetId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesPrivateSubnet1Id
+    Description: ID of the private subnet for Lambda function VPC configuration
+
+  CloudMapNamespaceName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesNamespaceName
+    Description: The name of the Cloud Map namespace
+
+  LlmServiceName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesLlmServiceName
+    Description: The name of the LLM Service in Cloud Map
+
+  # Parameter to control whether to create DynamoDB tables or use existing ones
+  CreateDynamoDBTables:
     Type: String
-    Description: Comma-separated list of subnet IDs for Lambda function VPC configuration
-    Default: ""
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether to create DynamoDB tables or use existing ones
+
+Conditions:
+  ShouldCreateDynamoDBTables: !Equals [!Ref CreateDynamoDBTables, "true"]
 
 Globals:
   Function:
@@ -65,8 +92,8 @@ Globals:
     Environment:
       Variables:
         NODE_ENV: !Ref Environment
-        CONNECTIONS_TABLE: !Ref ConnectionsTable
-        CHAT_SESSIONS_TABLE: !Ref ChatSessionsTable
+        CONNECTIONS_TABLE: WebSocketConnectionsTable
+        CHAT_SESSIONS_TABLE: WebSocketChatSessionsTable
         COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
         COGNITO_CLIENT_ID: !Ref CognitoClientId
         SENTRY_DSN: !Ref SentryDsn
@@ -116,9 +143,10 @@ Resources:
       IdentitySource:
         - "route.request.header.Cookie"
 
-  # DynamoDB Table for connections
+  # DynamoDB Table for connections - only create if condition is true
   ConnectionsTable:
     Type: AWS::DynamoDB::Table
+    Condition: ShouldCreateDynamoDBTables
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -148,9 +176,10 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # DynamoDB Table for chat sessions
+  # DynamoDB Table for chat sessions - only create if condition is true
   ChatSessionsTable:
     Type: AWS::DynamoDB::Table
+    Condition: ShouldCreateDynamoDBTables
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -293,9 +322,9 @@ Resources:
         - !Ref SentryLambdaLayerArn
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref ConnectionsTable
+            TableName: WebSocketConnectionsTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref ChatSessionsTable
+            TableName: WebSocketChatSessionsTable
       Tags:
         Project: deepseek
         Environment: !Ref Environment
@@ -309,9 +338,9 @@ Resources:
         - !Ref SentryLambdaLayerArn
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref ConnectionsTable
+            TableName: WebSocketConnectionsTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref ChatSessionsTable
+            TableName: WebSocketChatSessionsTable
       Tags:
         Project: deepseek
         Environment: !Ref Environment
@@ -326,18 +355,17 @@ Resources:
         - !Ref SentryLambdaLayerArn
       VpcConfig:
         SecurityGroupIds:
-          - "sg-025460c3f4722c0b8" # SharedAiServicesLambdaClientSgId
-        SubnetIds: !Split
-          - ","
-          - !Ref SubnetIds
+          - !Ref LambdaSecurityGroupId
+        SubnetIds: 
+          - !Ref PrivateSubnetId
       Environment:
         Variables:
-          LLM_ENDPOINT: "deepseek-llm.shared-ai-services.local" # Using provided service name and namespace
+          LLM_ENDPOINT: !Sub "${LlmServiceName}.${CloudMapNamespaceName}"
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref ConnectionsTable
+            TableName: WebSocketConnectionsTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref ChatSessionsTable
+            TableName: WebSocketChatSessionsTable
         - Statement:
             - Effect: Allow
               Action:
@@ -367,9 +395,9 @@ Resources:
         - !Ref SentryLambdaLayerArn
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref ConnectionsTable
+            TableName: WebSocketConnectionsTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref ChatSessionsTable
+            TableName: WebSocketChatSessionsTable
         - Statement:
             - Effect: Allow
               Action:
@@ -570,17 +598,17 @@ Outputs:
     Export:
       Name: WebSocketCustomDomainURL
 
-  ConnectionsTableArn:
-    Description: "DynamoDB Connections Table ARN"
-    Value: !GetAtt ConnectionsTable.Arn
+  ConnectionsTableName:
+    Description: "DynamoDB Connections Table Name"
+    Value: "WebSocketConnectionsTable"
     Export:
-      Name: WebSocketConnectionsTableArn
+      Name: WebSocketConnectionsTableName
 
-  ChatSessionsTableArn:
-    Description: "DynamoDB Chat Sessions Table ARN"
-    Value: !GetAtt ChatSessionsTable.Arn
+  ChatSessionsTableName:
+    Description: "DynamoDB Chat Sessions Table Name"
+    Value: "WebSocketChatSessionsTable"
     Export:
-      Name: WebSocketChatSessionsTableArn
+      Name: WebSocketChatSessionsTableName
 
   WsApiCertificateArn:
     Description: "ARN of the WebSocket API Certificate"
