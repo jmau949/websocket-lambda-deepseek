@@ -23,8 +23,8 @@ Parameters:
     Default: ""
 
   DomainName:
-    Type: String
-    Default: ws.jonathanmau.com
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /networking/production/domain-name
     Description: Custom domain name for WebSocket API
 
   FrontendUrl:
@@ -33,7 +33,8 @@ Parameters:
     Description: Frontend URL for CORS and origin validation
 
   HostedZoneId:
-    Type: String
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /networking/production/hosted-zone-id
     Description: Route 53 Hosted Zone ID for jonathanmau.com domain
 
   SentryDsn:
@@ -81,6 +82,24 @@ Parameters:
       - "false"
     Description: Whether to create DynamoDB tables or use existing ones
 
+  # Certificate ARN from SSM
+  CertificateArn:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /networking/production/certificate-arn
+    Description: ARN of the ACM certificate for API Gateway
+
+  # WebSocket API ID from SSM
+  WebSocketApiId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /networking/production/websocket-api-id
+    Description: WebSocket API ID
+
+  # WebSocket API Endpoint from SSM
+  WebSocketApiEndpoint:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /networking/production/websocket-api-endpoint
+    Description: WebSocket API Endpoint
+
 Conditions:
   ShouldCreateDynamoDBTables: !Equals [!Ref CreateDynamoDBTables, "true"]
 
@@ -103,46 +122,6 @@ Globals:
       Environment: !Ref Environment
 
 Resources:
-  # Create a new ACM Certificate for the subdomain
-  WsApiCertificate:
-    Type: AWS::CertificateManager::Certificate
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      DomainName: !Ref DomainName
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName: !Ref DomainName
-          HostedZoneId: !Ref HostedZoneId
-      Tags:
-        - Key: Project
-          Value: deepseek
-        - Key: Environment
-          Value: !Ref Environment
-
-  # WebSocket API
-  WebSocketApi:
-    Type: AWS::ApiGatewayV2::Api
-    Properties:
-      Name: !Ref WebSocketApiGatewayName
-      ProtocolType: WEBSOCKET
-      RouteSelectionExpression: "$request.body.action"
-      ApiKeySelectionExpression: "$request.header.x-api-key"
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
-
-  # Authorizer
-  WebSocketAuthorizer:
-    Type: AWS::ApiGatewayV2::Authorizer
-    Properties:
-      Name: CognitoAuthorizer
-      ApiId: !Ref WebSocketApi
-      AuthorizerType: REQUEST
-      AuthorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
-      IdentitySource:
-        - "route.request.header.Cookie"
-
   # DynamoDB Table for connections - only create if condition is true
   ConnectionsTable:
     Type: AWS::DynamoDB::Table
@@ -209,92 +188,6 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # Routes and Integrations
-  ConnectRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $connect
-      AuthorizationType: CUSTOM
-      AuthorizerId: !Ref WebSocketAuthorizer
-      RouteResponseSelectionExpression: $default
-      OperationName: ConnectRoute
-      Target: !Join
-        - /
-        - - integrations
-          - !Ref ConnectIntegration
-
-  ConnectIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri:
-        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations
-
-  DisconnectRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $disconnect
-      AuthorizationType: NONE
-      RouteResponseSelectionExpression: $default
-      OperationName: DisconnectRoute
-      Target: !Join
-        - /
-        - - integrations
-          - !Ref DisconnectIntegration
-
-  DisconnectIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri:
-        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectFunction.Arn}/invocations
-
-  MessageRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: message
-      AuthorizationType: NONE
-      RouteResponseSelectionExpression: $default
-      OperationName: MessageRoute
-      Target: !Join
-        - /
-        - - integrations
-          - !Ref MessageIntegration
-
-  MessageIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri:
-        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessageFunction.Arn}/invocations
-
-  DefaultRoute:
-    Type: AWS::ApiGatewayV2::Route
-    Properties:
-      ApiId: !Ref WebSocketApi
-      RouteKey: $default
-      AuthorizationType: NONE
-      RouteResponseSelectionExpression: $default
-      OperationName: DefaultRoute
-      Target: !Join
-        - /
-        - - integrations
-          - !Ref DefaultIntegration
-
-  DefaultIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      ApiId: !Ref WebSocketApi
-      IntegrationType: AWS_PROXY
-      IntegrationUri:
-        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DefaultFunction.Arn}/invocations
-
   # Authorizer Lambda Function
   AuthorizerFunction:
     Type: AWS::Serverless::Function
@@ -311,6 +204,118 @@ Resources:
       Tags:
         Project: deepseek
         Environment: !Ref Environment
+
+  # Authorizer
+  WebSocketAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      Name: CognitoAuthorizer
+      ApiId: !Ref WebSocketApiId
+      AuthorizerType: REQUEST
+      AuthorizerUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations"
+      IdentitySource:
+        - "route.request.header.Cookie"
+
+  # Routes and Integrations
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      RouteKey: $connect
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref WebSocketAuthorizer
+      RouteResponseSelectionExpression: $default
+      OperationName: ConnectRoute
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref ConnectIntegration
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConnectFunction.Arn}/invocations"
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      RouteResponseSelectionExpression: $default
+      OperationName: DisconnectRoute
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref DisconnectIntegration
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectFunction.Arn}/invocations"
+
+  MessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      RouteKey: message
+      AuthorizationType: NONE
+      RouteResponseSelectionExpression: $default
+      OperationName: MessageRoute
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref MessageIntegration
+
+  MessageIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessageFunction.Arn}/invocations"
+
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      RouteKey: $default
+      AuthorizationType: NONE
+      RouteResponseSelectionExpression: $default
+      OperationName: DefaultRoute
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref DefaultIntegration
+
+  DefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DefaultFunction.Arn}/invocations"
+
+  # WebSocket API Deployment and Stage
+  Deployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - ConnectRoute
+      - DisconnectRoute
+      - MessageRoute
+      - DefaultRoute
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      Description: "WebSocket API Deployment"
+
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApiId
+      DeploymentId: !Ref Deployment
+      StageName: Prod
 
   # Lambda Functions
   ConnectFunction:
@@ -372,9 +377,9 @@ Resources:
                 - "execute-api:ManageConnections"
                 - "execute-api:Invoke"
               Resource:
-                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
-                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*"
-                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*/POST/@connections/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*/GET/@connections/*"
         # Add permissions for service discovery
         - AWSLambdaVPCAccessExecutionRole
         - Statement:
@@ -404,9 +409,9 @@ Resources:
                 - "execute-api:ManageConnections"
                 - "execute-api:Invoke"
               Resource:
-                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
-                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*"
-                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*/POST/@connections/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*/GET/@connections/*"
       Tags:
         Project: deepseek
         Environment: !Ref Environment
@@ -418,7 +423,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref AuthorizerFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/authorizers/*
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/authorizers/*"
 
   # Additional Lambda permissions for other functions
   ConnectFunctionPermission:
@@ -427,7 +432,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref ConnectFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$connect
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*/$connect"
 
   DisconnectFunctionPermission:
     Type: AWS::Lambda::Permission
@@ -435,7 +440,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref DisconnectFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$disconnect
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*/$disconnect"
 
   MessageFunctionPermission:
     Type: AWS::Lambda::Permission
@@ -443,7 +448,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref MessageFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/message
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*/message"
 
   DefaultFunctionPermission:
     Type: AWS::Lambda::Permission
@@ -451,7 +456,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref DefaultFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$default
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/*/$default"
 
   # Lambda Log Groups with 30-day retention
   AuthorizerFunctionLogGroup:
@@ -519,78 +524,18 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # WebSocket API Deployment and Stage
-  Deployment:
-    Type: AWS::ApiGatewayV2::Deployment
-    DependsOn:
-      - ConnectRoute
-      - DisconnectRoute
-      - MessageRoute
-      - DefaultRoute
-    Properties:
-      ApiId: !Ref WebSocketApi
-
-  Stage:
-    Type: AWS::ApiGatewayV2::Stage
-    Properties:
-      ApiId: !Ref WebSocketApi
-      DeploymentId: !Ref Deployment
-      StageName: Prod
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
-
-  # Domain Configuration for WebSocket API
-  WebSocketApiDomainName:
-    Type: AWS::ApiGatewayV2::DomainName
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      DomainName: !Ref DomainName
-      DomainNameConfigurations:
-        - CertificateArn: !Ref WsApiCertificate
-          EndpointType: REGIONAL
-          SecurityPolicy: TLS_1_2
-      Tags:
-        Project: deepseek
-        Environment: !Ref Environment
-
-  WebSocketApiMapping:
-    Type: AWS::ApiGatewayV2::ApiMapping
-    DependsOn:
-      - Stage
-      - WebSocketApiDomainName
-    Properties:
-      ApiId: !Ref WebSocketApi
-      DomainName: !Ref DomainName
-      Stage: Prod
-      # Note: ApiMapping doesn't support tags in CloudFormation
-
-  # DNS Record for WebSocket Subdomain
-  WsDnsRecord:
-    Type: AWS::Route53::RecordSet
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    DependsOn: WebSocketApiDomainName
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
-      Type: A
-      AliasTarget:
-        DNSName: !GetAtt WebSocketApiDomainName.RegionalDomainName
-        HostedZoneId: !GetAtt WebSocketApiDomainName.RegionalHostedZoneId
-      # Note: Route53 RecordSet doesn't support tags in CloudFormation
-
 Outputs:
   WebSocketApiId:
     Description: "API Gateway WebSocket API ID"
-    Value: !Ref WebSocketApi
+    Value: !Ref WebSocketApiId
     Export:
       Name: WebSocketApiId
 
   WebSocketDefaultURL:
     Description: "API Gateway WebSocket URL"
-    Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+    Value: !Ref WebSocketApiEndpoint
+    Export: 
+      Name: WebSocketApiEndpoint
 
   WebSocketCustomDomainURL:
     Description: "Custom domain WebSocket URL"
@@ -609,15 +554,3 @@ Outputs:
     Value: "WebSocketChatSessionsTable"
     Export:
       Name: WebSocketChatSessionsTableName
-
-  WsApiCertificateArn:
-    Description: "ARN of the WebSocket API Certificate"
-    Value: !Ref WsApiCertificate
-    Export:
-      Name: WebSocketApiCertificateArn
-
-  WebSocketApiDomainNameOutput:
-    Description: "Domain name for the WebSocket API Gateway"
-    Value: !GetAtt WebSocketApiDomainName.RegionalDomainName
-    Export:
-      Name: WebSocketApiDomainName
