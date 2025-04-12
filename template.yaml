@@ -49,7 +49,7 @@ Parameters:
 
   WebSocketApiGatewayName:
     Type: String
-    Default: "jonathanmau-websocket-deepseek"
+    Default: "jonathanmau-websocket-deepseek-production"
     Description: Name for the WebSocket API Gateway (should remain consistent across deployments)
 
   # Parameters for shared VPC resources
