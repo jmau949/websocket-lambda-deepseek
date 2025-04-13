@@ -19,9 +19,28 @@ export interface Connection {
   isAuthenticated?: boolean;
 }
 
-// Create DynamoDB clients
-const client = new DynamoDBClient({ region: config.region });
-const docClient = DynamoDBDocumentClient.from(client);
+// Create DynamoDB clients with improved configuration for VPC
+const clientConfig = { 
+  region: config.region,
+  // Don't set a custom endpoint - use SDK's auto-resolution
+  // Optimizations for VPC environment
+  maxAttempts: 3,         // Reduced for faster failure detection
+  retryMode: "standard",
+  // Add this configuration to increase timeouts for VPC endpoint latency
+  requestHandler: {
+    connectionTimeout: 3000
+  }
+};
+
+const client = new DynamoDBClient(clientConfig);
+
+// Create document client with optimized serialization options
+const docClient = DynamoDBDocumentClient.from(client, {
+  marshallOptions: {
+    convertEmptyValues: true,
+    removeUndefinedValues: true,
+  }
+});
 
 /**
  * Add a new WebSocket connection to DynamoDB
@@ -41,9 +60,8 @@ export const saveConnection = async (connection: Connection): Promise<void> => {
 
   try {
     await docClient.send(new PutCommand(params));
-    console.log(`Connection ${connection.connectionId} saved`);
   } catch (error) {
-    console.error("Error saving connection:", error);
+    console.error(`Error saving connection ${connection.connectionId}:`, error);
     throw error;
   }
 };
@@ -65,7 +83,7 @@ export const getConnection = async (
     const { Item } = await docClient.send(new GetCommand(params));
     return (Item as Connection) || null;
   } catch (error) {
-    console.error("Error getting connection:", error);
+    console.error(`Error getting connection ${connectionId}:`, error);
     throw error;
   }
 };
@@ -83,9 +101,8 @@ export const deleteConnection = async (connectionId: string): Promise<void> => {
 
   try {
     await docClient.send(new DeleteCommand(params));
-    console.log(`Connection ${connectionId} deleted`);
   } catch (error) {
-    console.error("Error deleting connection:", error);
+    console.error(`Error deleting connection ${connectionId}:`, error);
     throw error;
   }
 };
@@ -109,7 +126,6 @@ export const getConnectionsByUserId = async (
     );
 
     if (!result.Items || result.Items.length === 0) {
-      console.log(`No connections found for user ${userId}`);
       return [];
     }
 
