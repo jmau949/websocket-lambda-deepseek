@@ -1,6 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Fastify WebSocket API with API Gateway, Lambda and DynamoDB
+Description: >-
+  Fastify WebSocket API with API Gateway, Lambda and DynamoDB. 
+  The Message Lambda function is VPC-enabled to access the LLM service,
+  using shared infrastructure parameters from the deepseek-llm-service stack.
 
 Parameters:
   Environment:
@@ -52,10 +55,20 @@ Parameters:
     Description: Name for the WebSocket API Gateway (should remain consistent across deployments)
 
   # Parameters for shared VPC resources
+  VpcId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesVpcId
+    Description: VPC ID for shared AI services
+
   LambdaSecurityGroupId:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /websocket-lambda-deepseek/SharedAiServicesLambdaClientSgId
     Description: Security Group ID for Lambda functions connecting to LLM Service
+
+  ApiGatewayEndpointSgId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesApiGatewayEndpointSgId
+    Description: Security Group ID for API Gateway endpoint
 
   PrivateSubnetId:
     Type: AWS::SSM::Parameter::Value<String>
@@ -71,6 +84,11 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /websocket-lambda-deepseek/SharedAiServicesLlmServiceName
     Description: The name of the LLM Service in Cloud Map
+
+  DynamoDbEndpointId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesDynamoDbEndpointId
+    Description: DynamoDB VPC Endpoint ID
 
   # Parameter to control whether to create DynamoDB tables or use existing ones
   CreateDynamoDBTables:
@@ -356,11 +374,13 @@ Resources:
       VpcConfig:
         SecurityGroupIds:
           - !Ref LambdaSecurityGroupId
+          - !Ref ApiGatewayEndpointSgId
         SubnetIds: 
           - !Ref PrivateSubnetId
       Environment:
         Variables:
           LLM_ENDPOINT: !Sub "${LlmServiceName}.${CloudMapNamespaceName}"
+          DYNAMODB_ENDPOINT_ID: !Ref DynamoDbEndpointId
       Policies:
         - DynamoDBCrudPolicy:
             TableName: WebSocketConnectionsTable
@@ -375,6 +395,22 @@ Resources:
                 - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
                 - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/POST/@connections/*"
                 - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/GET/@connections/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/DELETE/@connections/*"
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/Prod/@connections/*"
+            - Effect: Allow
+              Action:
+                - "dynamodb:Scan"
+              Resource:
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/WebSocketConnectionsTable"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/WebSocketConnectionsTable/index/*"
+            - Effect: Allow
+              Action:
+                - "apigateway:GET"
+                - "apigateway:POST"
+              Resource:
+                - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}"
+                - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}/stages/Prod"
+                - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}/routes"
         # Add permissions for service discovery
         - AWSLambdaVPCAccessExecutionRole
         - Statement:
@@ -382,6 +418,16 @@ Resources:
               Action:
                 - "servicediscovery:DiscoverInstances"
               Resource: "*"
+            - Effect: Allow
+              Action:
+                - "servicediscovery:ListNamespaces"
+                - "servicediscovery:ListServices"
+                - "servicediscovery:GetNamespace"
+                - "servicediscovery:GetService"
+                - "servicediscovery:GetInstance"
+              Resource: 
+                - !Sub "arn:aws:servicediscovery:${AWS::Region}:${AWS::AccountId}:namespace/*"
+                - !Sub "arn:aws:servicediscovery:${AWS::Region}:${AWS::AccountId}:service/*"
       Tags:
         Project: deepseek
         Environment: !Ref Environment
@@ -456,7 +502,6 @@ Resources:
   # Lambda Log Groups with 30-day retention
   AuthorizerFunctionLogGroup:
     Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub "/aws/lambda/${AuthorizerFunction}"
@@ -469,7 +514,6 @@ Resources:
 
   ConnectFunctionLogGroup:
     Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub "/aws/lambda/${ConnectFunction}"
@@ -482,7 +526,6 @@ Resources:
 
   DisconnectFunctionLogGroup:
     Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub "/aws/lambda/${DisconnectFunction}"
@@ -495,7 +538,6 @@ Resources:
 
   MessageFunctionLogGroup:
     Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub "/aws/lambda/${MessageFunction}"
@@ -508,7 +550,6 @@ Resources:
 
   DefaultFunctionLogGroup:
     Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub "/aws/lambda/${DefaultFunction}"
