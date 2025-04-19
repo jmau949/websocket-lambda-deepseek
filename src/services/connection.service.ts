@@ -19,20 +19,10 @@ export interface Connection {
   isAuthenticated?: boolean;
 }
 
-// Create DynamoDB clients with improved configuration for VPC
-const clientConfig = { 
-  region: config.region,
-  // Don't set a custom endpoint - use SDK's auto-resolution
-  // Optimizations for VPC environment
-  maxAttempts: 3,         // Reduced for faster failure detection
-  retryMode: "standard",
-  // Add this configuration to increase timeouts for VPC endpoint latency
-  requestHandler: {
-    connectionTimeout: 3000
-  }
-};
-
-const client = new DynamoDBClient(clientConfig);
+// Create DynamoDB client with standard configuration
+const client = new DynamoDBClient({ 
+  region: config.region
+});
 
 // Create document client with optimized serialization options
 const docClient = DynamoDBDocumentClient.from(client, {
