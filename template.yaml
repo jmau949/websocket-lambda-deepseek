@@ -2,8 +2,8 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >-
   Fastify WebSocket API with API Gateway, Lambda and DynamoDB. 
-  The Message Lambda function is VPC-enabled to access the LLM service,
-  using shared infrastructure parameters from the deepseek-llm-service stack.
+  The Message Lambda function connects to the LLM service via an Application Load Balancer
+  in a private VPC using the new architecture.
 
 Parameters:
   Environment:
@@ -54,41 +54,16 @@ Parameters:
     Default: "jonathanmau-websocket-deepseek"
     Description: Name for the WebSocket API Gateway (should remain consistent across deployments)
 
-  # Parameters for shared VPC resources
-  VpcId:
+  # Parameters for ALB endpoint
+  AlbDnsName:
     Type: AWS::SSM::Parameter::Value<String>
-    Default: /websocket-lambda-deepseek/SharedAiServicesVpcId
-    Description: VPC ID for shared AI services
+    Default: /websocket-lambda-deepseek/SharedAiServicesAlbDnsName
+    Description: DNS Name of the Application Load Balancer for LLM service
 
-  LambdaSecurityGroupId:
+  VpcLinkId:
     Type: AWS::SSM::Parameter::Value<String>
-    Default: /websocket-lambda-deepseek/SharedAiServicesLambdaClientSgId
-    Description: Security Group ID for Lambda functions connecting to LLM Service
-
-  ApiGatewayEndpointSgId:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /websocket-lambda-deepseek/SharedAiServicesApiGatewayEndpointSgId
-    Description: Security Group ID for API Gateway endpoint
-
-  PrivateSubnetId:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /websocket-lambda-deepseek/SharedAiServicesPrivateSubnet1Id
-    Description: ID of the private subnet for Lambda function VPC configuration
-
-  CloudMapNamespaceName:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /websocket-lambda-deepseek/SharedAiServicesNamespaceName
-    Description: The name of the Cloud Map namespace
-
-  LlmServiceName:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /websocket-lambda-deepseek/SharedAiServicesLlmServiceName
-    Description: The name of the LLM Service in Cloud Map
-
-  DynamoDbEndpointId:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /websocket-lambda-deepseek/SharedAiServicesDynamoDbEndpointId
-    Description: DynamoDB VPC Endpoint ID
+    Default: /websocket-lambda-deepseek/SharedAiServicesVpcLinkId
+    Description: ID of the VPC Link for API Gateway v2
 
   # Parameter to control whether to create DynamoDB tables or use existing ones
   CreateDynamoDBTables:
@@ -371,16 +346,12 @@ Resources:
       Timeout: 900
       Layers:
         - !Ref SentryLambdaLayerArn
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroupId
-          - !Ref ApiGatewayEndpointSgId
-        SubnetIds: 
-          - !Ref PrivateSubnetId
       Environment:
         Variables:
-          LLM_ENDPOINT: !Sub "${LlmServiceName}.${CloudMapNamespaceName}"
-          DYNAMODB_ENDPOINT_ID: !Ref DynamoDbEndpointId
+          LLM_ENDPOINT: !Ref AlbDnsName
+          API_ID: !Ref WebSocketApi
+          RUNNING_IN_VPC: "false" 
+          ALB_VPC_LINK_ID: !Ref VpcLinkId
       Policies:
         - DynamoDBCrudPolicy:
             TableName: WebSocketConnectionsTable
@@ -411,23 +382,6 @@ Resources:
                 - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}"
                 - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}/stages/Prod"
                 - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}/routes"
-        # Add permissions for service discovery
-        - AWSLambdaVPCAccessExecutionRole
-        - Statement:
-            - Effect: Allow
-              Action:
-                - "servicediscovery:DiscoverInstances"
-              Resource: "*"
-            - Effect: Allow
-              Action:
-                - "servicediscovery:ListNamespaces"
-                - "servicediscovery:ListServices"
-                - "servicediscovery:GetNamespace"
-                - "servicediscovery:GetService"
-                - "servicediscovery:GetInstance"
-              Resource: 
-                - !Sub "arn:aws:servicediscovery:${AWS::Region}:${AWS::AccountId}:namespace/*"
-                - !Sub "arn:aws:servicediscovery:${AWS::Region}:${AWS::AccountId}:service/*"
       Tags:
         Project: deepseek
         Environment: !Ref Environment
