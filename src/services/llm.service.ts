@@ -3,6 +3,8 @@ import * as protoLoader from "@grpc/proto-loader";
 import * as path from "path";
 import * as fs from "fs";
 import { config } from "../config/config";
+import * as dns from "dns";
+import * as net from "net";
 
 // LLM Request and Response interfaces
 export interface LLMRequest {
@@ -25,8 +27,63 @@ export interface LLMResponse {
 let llmClient: any = null;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3; // Increased to allow more retries
-const RETRY_DELAY_MS = 500;
-const CONNECTION_TIMEOUT_SECONDS = 10; // Increase timeout for connection
+const RETRY_DELAY_MS = 1000; // Increased delay between retries
+const CONNECTION_TIMEOUT_SECONDS = 15; // Increase timeout for connection
+
+/**
+ * Test DNS resolution for the endpoint
+ */
+const testDnsResolution = async (hostname: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    console.log(`Testing DNS resolution for ${hostname}...`);
+    dns.lookup(hostname, (err, address, family) => {
+      if (err) {
+        console.error(`DNS lookup failed for ${hostname}: ${err.message}`);
+        reject(err);
+      } else {
+        console.log(`DNS resolved ${hostname} to ${address} (IPv${family})`);
+        resolve();
+      }
+    });
+  });
+};
+
+/**
+ * Test TCP connection to the endpoint
+ */
+const testTcpConnection = async (
+  hostname: string,
+  port: number
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    console.log(`Testing TCP connection to ${hostname}:${port}...`);
+    const socket = new net.Socket();
+
+    // Set timeout to 5 seconds
+    socket.setTimeout(5000);
+
+    socket.on("connect", () => {
+      console.log(`TCP connection to ${hostname}:${port} successful`);
+      socket.end();
+      resolve();
+    });
+
+    socket.on("timeout", () => {
+      console.error(`TCP connection to ${hostname}:${port} timed out`);
+      socket.destroy();
+      reject(new Error("Connection timed out"));
+    });
+
+    socket.on("error", (err) => {
+      console.error(
+        `TCP connection to ${hostname}:${port} failed: ${err.message}`
+      );
+      reject(err);
+    });
+
+    socket.connect(port, hostname);
+  });
+};
 
 /**
  * Get or create the LLM service client with retry logic
@@ -92,6 +149,23 @@ export const getLLMClient = async (): Promise<any> => {
       throw new Error(`Proto file not found at ${PROTO_PATH}`);
     }
 
+    // Test network connectivity to the endpoint
+    try {
+      // Test DNS resolution first
+      await testDnsResolution(endpoint);
+
+      // Then test TCP connection
+      await testTcpConnection(endpoint, 443);
+
+      console.log("Network connectivity tests passed successfully");
+    } catch (err) {
+      console.error("Network connectivity tests failed:", err);
+      console.log(
+        "Continuing with gRPC client creation despite network test failure"
+      );
+      // We don't throw here as the gRPC client might still work
+    }
+
     // Load the proto definition
     const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
       keepCase: true,
@@ -103,8 +177,7 @@ export const getLLMClient = async (): Promise<any> => {
 
     const protoDescriptor = grpc.loadPackageDefinition(packageDefinition);
 
-    // Test network connectivity to endpoint first
-    console.log(`Testing network connectivity to ${endpoint}:443...`);
+    console.log(`Creating gRPC client for ${endpoint}:443...`);
 
     // Create the client with improved timeout and retry settings
     llmClient = new (protoDescriptor.llm as any).LLMService(
@@ -117,12 +190,12 @@ export const getLLMClient = async (): Promise<any> => {
               name: [{ service: "llm.LLMService" }],
               retryPolicy: {
                 maxAttempts: 5,
-                initialBackoff: "0.5s",
-                maxBackoff: "5s",
+                initialBackoff: "1s",
+                maxBackoff: "10s",
                 backoffMultiplier: 2,
                 retryableStatusCodes: ["UNAVAILABLE", "DEADLINE_EXCEEDED"],
               },
-              timeout: "10s",
+              timeout: "15s",
             },
           ],
         }),
@@ -132,6 +205,8 @@ export const getLLMClient = async (): Promise<any> => {
         "grpc.keepalive_permit_without_calls": 1, // Allow keepalives without active calls
         "grpc.max_connection_idle_ms": 60000, // 60 seconds
         "grpc.client_idle_timeout_ms": 60000, // 60 seconds
+        "grpc.max_reconnect_backoff_ms": 10000, // 10 seconds
+        "grpc.initial_reconnect_backoff_ms": 1000, // 1 second
       }
     );
 
@@ -152,6 +227,12 @@ export const getLLMClient = async (): Promise<any> => {
             );
             console.log(
               `Security groups: Verify inbound/outbound rules allow 443 to ALB`
+            );
+            console.log(
+              `VPC endpoints: Verify Lambda can reach the endpoint through the VPC`
+            );
+            console.log(
+              `NAT Gateway: Verify if Lambda needs internet access via NAT`
             );
           }
           llmClient = null;
