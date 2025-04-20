@@ -91,6 +91,11 @@ Parameters:
     Default: "arn:aws:acm:us-west-2:034362047054:certificate/436d84a6-1cc3-432c-b5ca-d9150749a5f6"
     Description: ACM Certificate ARN for the deepseek custom domain
 
+  ExistingWsCertificateArn:
+    Type: String
+    Default: "arn:aws:acm:us-west-2:034362047054:certificate/02f1864b-56d3-4314-8848-19f4e5942920"
+    Description: ARN of existing ACM Certificate for ws.jonathanmau.com domain
+
   # Parameter to control whether to create DynamoDB tables or use existing ones
   CreateDynamoDBTables:
     Type: String
@@ -122,23 +127,6 @@ Globals:
       Environment: !Ref Environment
 
 Resources:
-  # Create a new ACM Certificate for the subdomain
-  WsApiCertificate:
-    Type: AWS::CertificateManager::Certificate
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      DomainName: !Ref DomainName
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName: !Ref DomainName
-          HostedZoneId: !Ref HostedZoneId
-      Tags:
-        - Key: Project
-          Value: deepseek
-        - Key: Environment
-          Value: !Ref Environment
-
   # WebSocket API
   WebSocketApi:
     Type: AWS::ApiGatewayV2::Api
@@ -576,7 +564,7 @@ Resources:
         Project: deepseek
         Environment: !Ref Environment
 
-  # Domain Configuration for WebSocket API
+  # Domain Configuration for WebSocket API - Use existing certificate
   WebSocketApiDomainName:
     Type: AWS::ApiGatewayV2::DomainName
     DeletionPolicy: Retain
@@ -584,7 +572,7 @@ Resources:
     Properties:
       DomainName: !Ref DomainName
       DomainNameConfigurations:
-        - CertificateArn: !Ref WsApiCertificate
+        - CertificateArn: !Ref ExistingWsCertificateArn
           EndpointType: REGIONAL
           SecurityPolicy: TLS_1_2
       Tags:
@@ -645,12 +633,6 @@ Outputs:
     Value: "WebSocketChatSessionsTable"
     Export:
       Name: WebSocketChatSessionsTableName
-
-  WsApiCertificateArn:
-    Description: "ARN of the WebSocket API Certificate"
-    Value: !Ref WsApiCertificate
-    Export:
-      Name: WebSocketApiCertificateArn
 
   WebSocketApiDomainNameOutput:
     Description: "Domain name for the WebSocket API Gateway"

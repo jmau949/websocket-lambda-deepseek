@@ -1,6 +1,7 @@
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import * as path from "path";
+import * as fs from "fs";
 import { config } from "../config/config";
 
 // LLM Request and Response interfaces
@@ -44,7 +45,26 @@ export const getLLMClient = async (): Promise<any> => {
     const endpoint = config.llm.endpoint;
     console.log(`Using LLM endpoint: ${endpoint}`);
 
-    const PROTO_PATH = path.resolve(__dirname, "../proto/llm.proto");
+    // Determine the correct path for the proto file based on the environment
+    // For Lambda, the proto files should be in /var/task/proto
+    // For local development, they should be in the src/proto directory
+    let PROTO_PATH;
+
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      // We're running in Lambda
+      PROTO_PATH = path.resolve(__dirname, "../../proto/llm.proto");
+    } else {
+      // We're running locally
+      PROTO_PATH = path.resolve(__dirname, "../proto/llm.proto");
+    }
+
+    console.log(`Using proto file at: ${PROTO_PATH}`);
+
+    // Check if the file exists
+    if (!fs.existsSync(PROTO_PATH)) {
+      console.error(`Proto file not found at ${PROTO_PATH}`);
+      throw new Error(`Proto file not found at ${PROTO_PATH}`);
+    }
 
     // Load the proto definition
     const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
