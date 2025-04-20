@@ -26,6 +26,7 @@ let llmClient: any = null;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3; // Increased to allow more retries
 const RETRY_DELAY_MS = 500;
+const CONNECTION_TIMEOUT_SECONDS = 10; // Increase timeout for connection
 
 /**
  * Get or create the LLM service client with retry logic
@@ -51,8 +52,8 @@ export const getLLMClient = async (): Promise<any> => {
     let PROTO_PATH;
 
     if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
-      // We're running in Lambda
-      PROTO_PATH = path.resolve(__dirname, "../../proto/llm.proto");
+      // We're running in Lambda - use absolute path
+      PROTO_PATH = "/var/task/proto/llm.proto";
     } else {
       // We're running locally
       PROTO_PATH = path.resolve(__dirname, "../proto/llm.proto");
@@ -62,7 +63,32 @@ export const getLLMClient = async (): Promise<any> => {
 
     // Check if the file exists
     if (!fs.existsSync(PROTO_PATH)) {
+      // Try alternative paths for troubleshooting
       console.error(`Proto file not found at ${PROTO_PATH}`);
+
+      // Log a list of files in /var/task to help debug
+      if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+        try {
+          console.log("Checking /var/task directory:");
+          if (fs.existsSync("/var/task")) {
+            const files = fs.readdirSync("/var/task");
+            console.log("Files in /var/task:", files);
+
+            // Check if proto directory exists
+            if (fs.existsSync("/var/task/proto")) {
+              const protoFiles = fs.readdirSync("/var/task/proto");
+              console.log("Files in /var/task/proto:", protoFiles);
+            } else {
+              console.log("/var/task/proto directory not found");
+            }
+          } else {
+            console.log("/var/task directory not found");
+          }
+        } catch (err) {
+          console.error("Error listing directory:", err);
+        }
+      }
+
       throw new Error(`Proto file not found at ${PROTO_PATH}`);
     }
 
@@ -77,7 +103,10 @@ export const getLLMClient = async (): Promise<any> => {
 
     const protoDescriptor = grpc.loadPackageDefinition(packageDefinition);
 
-    // Create the client with timeout and retries
+    // Test network connectivity to endpoint first
+    console.log(`Testing network connectivity to ${endpoint}:443...`);
+
+    // Create the client with improved timeout and retry settings
     llmClient = new (protoDescriptor.llm as any).LLMService(
       `${endpoint}:443`, // Always use HTTPS port
       grpc.credentials.createSsl(), // Use SSL for secure communication with ALB
@@ -88,29 +117,43 @@ export const getLLMClient = async (): Promise<any> => {
               name: [{ service: "llm.LLMService" }],
               retryPolicy: {
                 maxAttempts: 5,
-                initialBackoff: "0.1s",
-                maxBackoff: "1s",
+                initialBackoff: "0.5s",
+                maxBackoff: "5s",
                 backoffMultiplier: 2,
-                retryableStatusCodes: ["UNAVAILABLE"],
+                retryableStatusCodes: ["UNAVAILABLE", "DEADLINE_EXCEEDED"],
               },
+              timeout: "10s",
             },
           ],
         }),
-        "grpc.keepalive_time_ms": 10000, // 10 seconds
-        "grpc.keepalive_timeout_ms": 5000, // 5 seconds
-        "grpc.http2.min_time_between_pings_ms": 10000, // 10 seconds
+        "grpc.keepalive_time_ms": 30000, // 30 seconds (increased)
+        "grpc.keepalive_timeout_ms": 10000, // 10 seconds (increased)
+        "grpc.http2.min_time_between_pings_ms": 15000, // 15 seconds
         "grpc.keepalive_permit_without_calls": 1, // Allow keepalives without active calls
+        "grpc.max_connection_idle_ms": 60000, // 60 seconds
+        "grpc.client_idle_timeout_ms": 60000, // 60 seconds
       }
     );
 
-    // Check if service is available
+    // Check if service is available with increased timeout
     await new Promise<void>((resolve, reject) => {
       const deadline = new Date();
-      deadline.setSeconds(deadline.getSeconds() + 5);
+      deadline.setSeconds(deadline.getSeconds() + CONNECTION_TIMEOUT_SECONDS);
+
+      console.log(`Setting connection deadline to ${deadline.toISOString()}`);
 
       llmClient.waitForReady(deadline, (error: Error | undefined) => {
         if (error) {
           console.error(`LLM client connection failed: ${error.message}`);
+          // Extra debug info
+          if (error.message.includes("Failed to connect")) {
+            console.log(
+              `DNS lookup for ${endpoint}: Verify VPC DNS configuration and network route`
+            );
+            console.log(
+              `Security groups: Verify inbound/outbound rules allow 443 to ALB`
+            );
+          }
           llmClient = null;
           reject(error);
         } else {
