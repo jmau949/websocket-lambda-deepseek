@@ -2,10 +2,6 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import * as path from "path";
 import { config } from "../config/config";
-import {
-  ServiceDiscoveryClient,
-  DiscoverInstancesCommand,
-} from "@aws-sdk/client-servicediscovery";
 
 // LLM Request and Response interfaces
 export interface LLMRequest {
@@ -24,75 +20,11 @@ export interface LLMResponse {
   isComplete: boolean;
 }
 
-interface DiscoveredInstance {
-  attributes: {
-    AWS_INSTANCE_IPV4: string;
-    AWS_INSTANCE_PORT: string;
-  };
-}
-
 // Store the client instance
 let llmClient: any = null;
 let connectionAttempts = 0;
-const MAX_CONNECTION_ATTEMPTS = 1;
+const MAX_CONNECTION_ATTEMPTS = 3; // Increased to allow more retries
 const RETRY_DELAY_MS = 500;
-
-/**
- * Discover LLM service instance using AWS Service Discovery
- */
-const discoverLlmService = async (): Promise<string> => {
-  console.log("Attempting to discover LLM service via service discovery...");
-  try {
-    // Parse service discovery namespace and service names
-    const endpointComponents = config.llm.endpoint.split(".");
-    if (endpointComponents.length < 2) {
-      throw new Error(
-        `Invalid service discovery format: ${config.llm.endpoint}`
-      );
-    }
-
-    const serviceName = endpointComponents[0];
-    const namespaceName = endpointComponents.slice(1).join(".");
-
-    console.log(
-      `Looking for service: ${serviceName} in namespace: ${namespaceName}`
-    );
-
-    // Initialize ServiceDiscovery client
-    const serviceDiscovery = new ServiceDiscoveryClient({
-      region: config.region,
-    });
-
-    // Discover instances
-    const params = {
-      NamespaceName: namespaceName,
-      ServiceName: serviceName,
-      MaxResults: 1, // Just need one healthy instance
-    };
-
-    const response = await serviceDiscovery.send(
-      new DiscoverInstancesCommand(params)
-    );
-
-    if (!response.Instances || response.Instances.length === 0) {
-      throw new Error(`No instances found for ${serviceName}.${namespaceName}`);
-    }
-
-    const instance = response.Instances[0] as DiscoveredInstance;
-    const ipv4 = instance.attributes.AWS_INSTANCE_IPV4;
-    const port = instance.attributes.AWS_INSTANCE_PORT || "50051";
-
-    const endpoint = `${ipv4}:${port}`;
-    console.log(`LLM service discovered at: ${endpoint}`);
-
-    return endpoint;
-  } catch (error) {
-    console.error("Failed to discover LLM service:", error);
-    // Fallback to configured endpoint if unable to discover
-    console.log(`Falling back to configured endpoint: ${config.llm.endpoint}`);
-    return config.llm.endpoint;
-  }
-};
 
 /**
  * Get or create the LLM service client with retry logic
@@ -108,21 +40,9 @@ export const getLLMClient = async (): Promise<any> => {
   );
 
   try {
-    // Discover service via AWS Service Discovery
-    let endpoint = config.llm.endpoint;
-
-    // Only attempt service discovery if endpoint looks like a service discovery name
-    if (endpoint.includes(".") && !endpoint.includes(":")) {
-      try {
-        endpoint = await discoverLlmService();
-      } catch (discoveryError) {
-        console.warn(
-          `Service discovery failed, using configured endpoint: ${endpoint}`
-        );
-      }
-    }
-
-    console.log(`Using endpoint: ${endpoint}`);
+    // Use the endpoint configured in environment or config
+    const endpoint = config.llm.endpoint;
+    console.log(`Using LLM endpoint: ${endpoint}`);
 
     const PROTO_PATH = path.resolve(__dirname, "../proto/llm.proto");
 
@@ -139,8 +59,8 @@ export const getLLMClient = async (): Promise<any> => {
 
     // Create the client with timeout and retries
     llmClient = new (protoDescriptor.llm as any).LLMService(
-      endpoint,
-      grpc.credentials.createInsecure(),
+      `${endpoint}:443`, // Always use HTTPS port
+      grpc.credentials.createSsl(), // Use SSL for secure communication with ALB
       {
         "grpc.service_config": JSON.stringify({
           methodConfig: [
@@ -156,6 +76,10 @@ export const getLLMClient = async (): Promise<any> => {
             },
           ],
         }),
+        "grpc.keepalive_time_ms": 10000, // 10 seconds
+        "grpc.keepalive_timeout_ms": 5000, // 5 seconds
+        "grpc.http2.min_time_between_pings_ms": 10000, // 10 seconds
+        "grpc.keepalive_permit_without_calls": 1, // Allow keepalives without active calls
       }
     );
 

@@ -54,16 +54,42 @@ Parameters:
     Default: "jonathanmau-websocket-deepseek"
     Description: Name for the WebSocket API Gateway (should remain consistent across deployments)
 
-  # Parameters for ALB endpoint
+  # Parameters for VPC and ALB endpoint
+  VpcId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesVpcId
+    Description: VPC ID for shared infrastructure
+    
+  PrivateSubnet1Id:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesPrivateSubnet1Id
+    Description: Private Subnet 1 ID
+
+  PrivateSubnet2Id:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesPrivateSubnet2Id
+    Description: Private Subnet 2 ID
+    
+  LambdaSecurityGroupId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /websocket-lambda-deepseek/SharedAiServicesLambdaSgId
+    Description: Security Group ID for Lambda functions
+    
+  # Application Load Balancer and custom domain
   AlbDnsName:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /websocket-lambda-deepseek/SharedAiServicesAlbDnsName
     Description: DNS Name of the Application Load Balancer for LLM service
+    
+  DeepseekCustomDomain:
+    Type: String
+    Default: "deepseek.jonathanmau.com"
+    Description: Custom domain name for the private ALB
 
-  VpcLinkId:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /websocket-lambda-deepseek/SharedAiServicesVpcLinkId
-    Description: ID of the VPC Link for API Gateway v2
+  DeepseekCertificateArn:
+    Type: String
+    Default: "arn:aws:acm:us-west-2:034362047054:certificate/436d84a6-1cc3-432c-b5ca-d9150749a5f6"
+    Description: ACM Certificate ARN for the deepseek custom domain
 
   # Parameter to control whether to create DynamoDB tables or use existing ones
   CreateDynamoDBTables:
@@ -348,10 +374,16 @@ Resources:
         - !Ref SentryLambdaLayerArn
       Environment:
         Variables:
-          LLM_ENDPOINT: !Ref AlbDnsName
+          LLM_ENDPOINT: !Ref DeepseekCustomDomain
           API_ID: !Ref WebSocketApi
-          RUNNING_IN_VPC: "false" 
-          ALB_VPC_LINK_ID: !Ref VpcLinkId
+          RUNNING_IN_VPC: "true"
+      # VPC Configuration for MessageFunction - inside VPC
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupId
+        SubnetIds:
+          - !Ref PrivateSubnet1Id
+          - !Ref PrivateSubnet2Id
       Policies:
         - DynamoDBCrudPolicy:
             TableName: WebSocketConnectionsTable
@@ -382,6 +414,15 @@ Resources:
                 - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}"
                 - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}/stages/Prod"
                 - !Sub "arn:aws:apigateway:${AWS::Region}::/apis/${WebSocketApi}/routes"
+            # Allow access to EC2, VPC and ENI resources needed for Lambda VPC integration
+            - Effect: Allow
+              Action:
+                - "ec2:CreateNetworkInterface"
+                - "ec2:DescribeNetworkInterfaces"
+                - "ec2:DeleteNetworkInterface"
+                - "ec2:AssignPrivateIpAddresses"
+                - "ec2:UnassignPrivateIpAddresses"
+              Resource: "*"
       Tags:
         Project: deepseek
         Environment: !Ref Environment

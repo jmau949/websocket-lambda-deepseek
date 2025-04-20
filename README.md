@@ -1,16 +1,37 @@
+# AWS WebSocket Lambda API with Cognito Auth and DeepSeek LLM
 
-# AWS WebSocket Lambda API with Cognito Auth
-
-A template repository for building real-time applications using AWS API Gateway WebSockets with Lambda integration and Cognito authentication.
+A WebSocket application using AWS API Gateway WebSockets with Lambda integration, Cognito authentication, and DeepSeek LLM for AI chat functionality.
 
 ## Architecture Overview
 
-This template implements a secure WebSocket API using:
+This implementation uses a secure WebSocket API with:
 
-- **API Gateway WebSocket API**: Handles WebSocket connections
+- **React Client Frontend**: Web interface for user interactions
+- **API Gateway WebSocket API**: Handles WebSocket connections with `$connect`, `$disconnect`, and message routes
 - **Cognito Authentication**: Validates JWT tokens via cookies
 - **Lambda Functions**: Process WebSocket events
-- **DynamoDB**: Stores active connections
+- **DynamoDB**: Stores active connections and chat sessions
+
+### New VPC Architecture
+
+The system uses an enhanced architecture with the following components:
+
+#### Resources outside the VPC:
+- React client frontend
+- API Gateway WebSockets with lambda handlers for `$authorizer` and `$connect`
+- DynamoDB for managing connections and sessions
+
+#### Resources inside the VPC:
+- `$message` handler Lambda function
+- Private Application Load Balancer (ALB)
+- GPU instances hosting the DeepSeek LLM
+- NAT Gateway for outbound connectivity
+
+#### Key Features:
+- Traffic between message handlers and GPU instances uses gRPC with sticky sessions
+- The message handler Lambda is inside the VPC and uses a NAT Gateway to connect to DynamoDB and API Gateway for WebSocket responses
+- Private ALB uses verified custom domain name (deepseek.jonathanmau.com) with ACM certificate
+- Message handler connects to DeepSeek LLM service via the private ALB
 
 ### API Gateway WebSocket Flow
 
@@ -19,16 +40,18 @@ The request flow follows these steps:
 1. **Connection Request**: Client initiates WebSocket connection with cookies
 2. **Authorization**: API Gateway validates JWT token via Cognito authorizer
 3. **Connection Establishment**: If authorized, $connect Lambda stores connection in DynamoDB
-4. **Message Processing**: Subsequent messages are routed to appropriate Lambda handlers
-5. **Response**: Lambda functions can send responses via the Management API
-6. **Disconnection**: On disconnect, $disconnect Lambda cleans up connection data
+4. **Message Processing**: Messages are routed to the $message Lambda inside the VPC
+5. **LLM Processing**: The $message Lambda communicates with DeepSeek LLM via private ALB using gRPC
+6. **Response**: Lambda functions send streaming responses via the API Gateway Management API
+7. **Disconnection**: On disconnect, $disconnect Lambda cleans up connection data
 
 ## Project Structure
 
 ```
-fastify-websocket-api/
+websocket-lambda-deepseek/
 ├── src/
 │   ├── handlers/      # Lambda handlers for WebSocket events
+│   │   ├── authorizer.ts  # Authorizes connections via Cognito
 │   │   ├── connect.ts     # Handles new connections
 │   │   ├── disconnect.ts  # Handles client disconnections
 │   │   ├── message.ts     # Processes incoming messages
@@ -37,13 +60,16 @@ fastify-websocket-api/
 │   ├── services/      # Business logic services
 │   │   ├── auth.service.ts       # JWT validation with JWKS caching
 │   │   ├── connection.service.ts # DynamoDB connection storage
+│   │   ├── chat-session.service.ts # Chat session management
+│   │   ├── llm.service.ts        # LLM service integration
 │   │   └── message.service.ts    # Message processing logic
-│   ├── models/        # Data models
-│   │   ├── connection.model.ts   # Connection entity model
-│   │   └── message.model.ts      # Message format definitions
 │   ├── utils/         # Utility functions
 │   │   ├── lambda.ts        # Lambda event helpers
-│   │   └── websocket.ts     # WebSocket communication utilities
+│   │   ├── websocket.ts     # WebSocket communication utilities
+│   │   ├── sanitization.ts  # Input validation and sanitization
+│   │   └── conversation.ts  # Conversation history formatting
+│   ├── proto/         # gRPC protocol definitions
+│   │   └── llm.proto        # LLM service proto definition
 │   ├── config/        # Configuration
 │   │   └── config.ts        # Environment & app configuration
 │   └── index.ts       # Main entry point
@@ -61,13 +87,14 @@ fastify-websocket-api/
 2. AWS SAM CLI installed
 3. Node.js 14+ and npm
 4. A Cognito User Pool for authentication
+5. VPC infrastructure with private subnets, security groups, and ALB already set up
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/fastify-websocket-api.git
-cd fastify-websocket-api
+git clone https://github.com/yourusername/websocket-lambda-deepseek.git
+cd websocket-lambda-deepseek
 
 # Install dependencies
 npm install
@@ -80,28 +107,45 @@ npm install
 ```typescript
 export const config = {
   // DynamoDB
-  connectionsTable: process.env.CONNECTIONS_TABLE || 'ConnectionsTable',
+  connectionsTable: process.env.CONNECTIONS_TABLE || "ConnectionsTable",
+  chatSessionsTable: process.env.CHAT_SESSIONS_TABLE || "ChatSessionsTable",
   
-  // Connection TTL in seconds (default: 2 hours)
-  connectionTtl: 7200,
+  // Connection TTL in seconds (default: 2 weeks)
+  connectionTtl: 1209600,
+  chatSessionTtl: 1209600,
   
   // AWS region
-  region: process.env.AWS_REGION || 'us-east-1',
+  region: process.env.AWS_REGION || "us-east-1",
 
-  // Authentication
-  auth: {
-    jwksCacheTTL: 24 * 60 * 60 * 1000, // 24 hours in milliseconds
+  webSocket: {
+    // Whether to enable broadcasting messages to all connections
+    enableBroadcast: process.env.ENABLE_BROADCAST === "true",
+
+    // Default stage name for API Gateway
+    defaultStage: "Prod",
   },
 
   // Cognito configuration
   cognito: {
-    userPoolId: process.env.COGNITO_USER_POOL_ID || '',
-    clientId: process.env.COGNITO_CLIENT_ID || '',
-  }
+    userPoolId: process.env.COGNITO_USER_POOL_ID || "",
+    clientId: process.env.COGNITO_CLIENT_ID || "",
+  },
+  
+  llm: {
+    // Use private ALB custom domain for the DeepSeek LLM service in VPC
+    // The MessageFunction Lambda is inside the VPC and connects directly to the ALB
+    endpoint: process.env.LLM_ENDPOINT || "deepseek.jonathanmau.com",
+    defaultTemperature: 0.7,
+    defaultMaxTokens: 2048,
+    defaultTopP: 0.95,
+    defaultPresencePenalty: 0,
+    defaultFrequencyPenalty: 0,
+    timeoutMs: 30000,
+  },
 };
 ```
 
-2. Update `template.yaml` with your Cognito User Pool details:
+2. Update `template.yaml` parameters to match your environment:
 
 ```yaml
 Parameters:
@@ -114,6 +158,16 @@ Parameters:
     Type: String
     Description: Cognito Client ID
     Default: ''
+    
+  DeepseekCustomDomain:
+    Type: String
+    Default: "deepseek.jonathanmau.com"
+    Description: Custom domain name for the private ALB
+    
+  DeepseekCertificateArn:
+    Type: String
+    Default: "arn:aws:acm:us-west-2:034362047054:certificate/436d84a6-1cc3-432c-b5ca-d9150749a5f6"
+    Description: ACM Certificate ARN for the deepseek custom domain
 ```
 
 ## Local Development
@@ -125,7 +179,7 @@ For local development, the project includes a WebSocket server that simulates AP
 ```bash
 # First, update Cognito settings in local-server.ts
 # Then run:
-npm run local
+npm run dev
 ```
 
 The server will start at `ws://localhost:3000` and will:
@@ -133,24 +187,6 @@ The server will start at `ws://localhost:3000` and will:
 - Validate tokens against your Cognito User Pool
 - Process WebSocket events using your Lambda handlers
 - Store connections in memory instead of DynamoDB
-
-### Authentication
-
-For local development:
-- You need a valid JWT token in an HTTP-only cookie named `auth` or `id_token`
-- The cookie must be set before connecting to the WebSocket
-- The server validates this token against the same Cognito User Pool as production
-
-### Testing with the Sample Client
-
-A sample React chat application is included to test the WebSocket connection:
-
-```bash
-# In a separate terminal
-cd client
-npm install
-npm start
-```
 
 ## Deployment to AWS
 
@@ -172,7 +208,8 @@ During the guided deployment, you'll be prompted for:
 - Stack name
 - AWS Region
 - Cognito User Pool ID
-- Cognito App Client ID
+- Cognito Client ID
+- Custom domain name and certificate ARN
 
 ### After Deployment
 
@@ -225,8 +262,11 @@ Send JSON messages with an `action` field to route the message:
 socket.send(JSON.stringify({
   action: 'message',
   data: {
-    content: 'Hello world',
-    recipient: 'all'
+    message: 'What is the capital of France?',
+    parameters: {
+      temperature: 0.7,
+      maxTokens: 2048
+    }
   }
 }));
 ```
@@ -240,40 +280,18 @@ socket.onmessage = (event) => {
 };
 ```
 
-## Lambda Functions
-
-### $connect Handler
-
-- Validates the connection
-- Extracts user information from Cognito claims
-- Stores connection details in DynamoDB
-
-### $disconnect Handler
-
-- Cleans up the connection from DynamoDB
-- Performs any necessary cleanup
-
-### message Handler
-
-- Processes incoming messages
-- Can send responses to specific connections
-
-### default Handler
-
-- Handles messages with unknown actions
-- Provides useful error feedback
-
 ## Monitoring and Debugging
 
 ### CloudWatch Logs
 
-Each Lambda function logs to CloudWatch:
+Each Lambda function logs to CloudWatch with 30-day retention:
 
 ```
-/aws/lambda/fastify-websocket-api-ConnectFunction-XXXX
-/aws/lambda/fastify-websocket-api-DisconnectFunction-XXXX
-/aws/lambda/fastify-websocket-api-MessageFunction-XXXX
-/aws/lambda/fastify-websocket-api-DefaultFunction-XXXX
+/aws/lambda/stack-name-AuthorizerFunction-XXXX
+/aws/lambda/stack-name-ConnectFunction-XXXX
+/aws/lambda/stack-name-DisconnectFunction-XXXX
+/aws/lambda/stack-name-MessageFunction-XXXX
+/aws/lambda/stack-name-DefaultFunction-XXXX
 ```
 
 ### API Gateway Logs
