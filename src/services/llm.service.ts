@@ -3,8 +3,6 @@ import * as protoLoader from "@grpc/proto-loader";
 import * as path from "path";
 import * as fs from "fs";
 import { config } from "../config/config";
-import * as dns from "dns";
-import * as net from "net";
 
 // LLM Request and Response interfaces
 export interface LLMRequest {
@@ -29,61 +27,6 @@ let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3; // Increased to allow more retries
 const RETRY_DELAY_MS = 1000; // Increased delay between retries
 const CONNECTION_TIMEOUT_SECONDS = 15; // Increase timeout for connection
-
-/**
- * Test DNS resolution for the endpoint
- */
-const testDnsResolution = async (hostname: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    console.log(`Testing DNS resolution for ${hostname}...`);
-    dns.lookup(hostname, (err, address, family) => {
-      if (err) {
-        console.error(`DNS lookup failed for ${hostname}: ${err.message}`);
-        reject(err);
-      } else {
-        console.log(`DNS resolved ${hostname} to ${address} (IPv${family})`);
-        resolve();
-      }
-    });
-  });
-};
-
-/**
- * Test TCP connection to the endpoint
- */
-const testTcpConnection = async (
-  hostname: string,
-  port: number
-): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    console.log(`Testing TCP connection to ${hostname}:${port}...`);
-    const socket = new net.Socket();
-
-    // Set timeout to 5 seconds
-    socket.setTimeout(5000);
-
-    socket.on("connect", () => {
-      console.log(`TCP connection to ${hostname}:${port} successful`);
-      socket.end();
-      resolve();
-    });
-
-    socket.on("timeout", () => {
-      console.error(`TCP connection to ${hostname}:${port} timed out`);
-      socket.destroy();
-      reject(new Error("Connection timed out"));
-    });
-
-    socket.on("error", (err) => {
-      console.error(
-        `TCP connection to ${hostname}:${port} failed: ${err.message}`
-      );
-      reject(err);
-    });
-
-    socket.connect(port, hostname);
-  });
-};
 
 /**
  * Get or create the LLM service client with retry logic
@@ -147,23 +90,6 @@ export const getLLMClient = async (): Promise<any> => {
       }
 
       throw new Error(`Proto file not found at ${PROTO_PATH}`);
-    }
-
-    // Test network connectivity to the endpoint
-    try {
-      // Test DNS resolution first
-      await testDnsResolution(endpoint);
-
-      // Then test TCP connection
-      await testTcpConnection(endpoint, 443);
-
-      console.log("Network connectivity tests passed successfully");
-    } catch (err) {
-      console.error("Network connectivity tests failed:", err);
-      console.log(
-        "Continuing with gRPC client creation despite network test failure"
-      );
-      // We don't throw here as the gRPC client might still work
     }
 
     // Load the proto definition
