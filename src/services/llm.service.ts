@@ -26,7 +26,8 @@ let llmClient: any = null;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3; // Increased to allow more retries
 const RETRY_DELAY_MS = 1000; // Increased delay between retries
-const CONNECTION_TIMEOUT_SECONDS = 15; // Increase timeout for connection
+const CONNECTION_TIMEOUT_SECONDS = 10; // Reduced connection timeout to 10 seconds
+const RESPONSE_TIMEOUT_SECONDS = 600; // 10 minutes for complete response generation
 
 /**
  * Get or create the LLM service client with retry logic
@@ -121,16 +122,16 @@ export const getLLMClient = async (): Promise<any> => {
                 backoffMultiplier: 2,
                 retryableStatusCodes: ["UNAVAILABLE", "DEADLINE_EXCEEDED"],
               },
-              timeout: "15s",
+              timeout: "10s", // Initial connection timeout
             },
           ],
         }),
-        "grpc.keepalive_time_ms": 30000, // 30 seconds (increased)
-        "grpc.keepalive_timeout_ms": 10000, // 10 seconds (increased)
+        "grpc.keepalive_time_ms": 60000, // 60 seconds
+        "grpc.keepalive_timeout_ms": 10000, // 10 seconds
         "grpc.http2.min_time_between_pings_ms": 15000, // 15 seconds
         "grpc.keepalive_permit_without_calls": 1, // Allow keepalives without active calls
-        "grpc.max_connection_idle_ms": 60000, // 60 seconds
-        "grpc.client_idle_timeout_ms": 60000, // 60 seconds
+        "grpc.max_connection_idle_ms": 120000, // 120 seconds
+        "grpc.client_idle_timeout_ms": 120000, // 120 seconds
         "grpc.max_reconnect_backoff_ms": 10000, // 10 seconds
         "grpc.initial_reconnect_backoff_ms": 1000, // 1 second
       }
@@ -217,9 +218,7 @@ export const generateResponse = async (
       };
 
       const deadline = new Date();
-      deadline.setMilliseconds(
-        deadline.getMilliseconds() + config.llm.timeoutMs
-      );
+      deadline.setSeconds(deadline.getSeconds() + RESPONSE_TIMEOUT_SECONDS);
 
       client.Generate(
         grpcRequest,
@@ -271,7 +270,10 @@ export const streamResponse = async (
 
     console.log("Starting gRPC streaming request...");
     const deadline = new Date();
-    deadline.setMilliseconds(deadline.getMilliseconds() + config.llm.timeoutMs);
+    deadline.setSeconds(deadline.getSeconds() + RESPONSE_TIMEOUT_SECONDS);
+    console.log(
+      `Setting response deadline to ${deadline.toISOString()} (${RESPONSE_TIMEOUT_SECONDS} seconds)`
+    );
 
     const stream = client.GenerateStream(grpcRequest, { deadline });
 
