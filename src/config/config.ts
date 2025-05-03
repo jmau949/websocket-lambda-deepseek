@@ -40,6 +40,5 @@ export const config = {
     defaultFrequencyPenalty: parseFloat(
       process.env.LLM_DEFAULT_FREQUENCY_PENALTY || "0"
     ),
-    timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS || "30000", 10),
   },
 };

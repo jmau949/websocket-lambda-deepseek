@@ -122,7 +122,7 @@ export const getLLMClient = async (): Promise<any> => {
                 backoffMultiplier: 2,
                 retryableStatusCodes: ["UNAVAILABLE", "DEADLINE_EXCEEDED"],
               },
-              timeout: "10s", // Initial connection timeout
+              timeout: "600s", // Use same 10-minute timeout for ALL method calls
             },
           ],
         }),
@@ -144,6 +144,7 @@ export const getLLMClient = async (): Promise<any> => {
 
       console.log(`Setting connection deadline to ${deadline.toISOString()}`);
 
+      // This is only for the initial connection check, still using 10 seconds
       llmClient.waitForReady(deadline, (error: Error | undefined) => {
         if (error) {
           console.error(`LLM client connection failed: ${error.message}`);
