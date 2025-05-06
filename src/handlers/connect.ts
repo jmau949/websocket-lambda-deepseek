@@ -27,6 +27,30 @@ export const handler = async (
     const domainName = connectionInfo.domainName as string;
     const stage = connectionInfo.stage as string;
 
+    // Extract origin header for additional validation
+    // TypeScript typings for WebSocket events can be incomplete, use type assertion
+    const headers = (event as any).headers || {};
+    const origin = headers.origin || headers.Origin || "";
+    console.log("Origin header:", origin);
+
+    // Define allowed origins - only jonathanmau.com domains
+    const allowedOrigins = [
+      "https://jonathanmau.com",
+      "https://ai.jonathanmau.com",
+      "https://ws.jonathanmau.com",
+      "https://www.ai.jonathanmau.com",
+    ];
+
+    // Check if origin is allowed - only jonathanmau.com domains
+    const isOriginAllowed = allowedOrigins.some((allowedOrigin) =>
+      origin.startsWith(allowedOrigin)
+    );
+
+    if (origin && !isOriginAllowed) {
+      console.log(`Origin not allowed: ${origin}`);
+      return createResponse(403, { message: "Origin not allowed" });
+    }
+
     // Extract user details from the authorizer context
     // Cast to any to access the authorizer property
     const requestContext = event.requestContext as any;
@@ -49,6 +73,7 @@ export const handler = async (
       userId,
       userEmail,
       isAuthenticated: true,
+      origin, // Store the origin for auditing/debugging
     });
 
     // Create a new chat session for this connection

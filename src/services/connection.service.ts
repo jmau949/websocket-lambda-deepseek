@@ -17,6 +17,7 @@ export interface Connection {
   userEmail?: string;
   ttl?: number;
   isAuthenticated?: boolean;
+  origin?: string;
 }
 
 // Create DynamoDB client with standard configuration

@@ -70,6 +70,27 @@ export const handler = async (
     // Get the API Gateway resource ARN
     const methodArn = event.methodArn;
 
+    // Check Origin header for allowed domains
+    const origin = event.headers?.origin || "";
+    console.log("Origin header:", origin);
+
+    // Define allowed origins - only jonathanmau.com domains
+    const allowedOrigins = [
+      "https://jonathanmau.com",
+      "https://ai.jonathanmau.com",
+      "https://ws.jonathanmau.com",
+    ];
+
+    // Check if origin is allowed - strict jonathanmau.com domains only
+    const isOriginAllowed = allowedOrigins.some((allowedOrigin) =>
+      origin.startsWith(allowedOrigin)
+    );
+
+    if (origin && !isOriginAllowed) {
+      console.log(`Origin not allowed: ${origin}`);
+      return generatePolicy("anonymous", "Deny", methodArn);
+    }
+
     // Extract token from Cookie header
     const cookieHeader = event.headers?.Cookie || "";
     console.log("Cookie header:", cookieHeader);
@@ -108,6 +129,7 @@ export const handler = async (
       userId,
       email,
       groups: JSON.stringify(groups),
+      origin,
     });
 
     console.log("Authorization result:", JSON.stringify(result, null, 2));
