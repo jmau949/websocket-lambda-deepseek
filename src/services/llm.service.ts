@@ -104,12 +104,14 @@ export const getLLMClient = async (): Promise<any> => {
 
     const protoDescriptor = grpc.loadPackageDefinition(packageDefinition);
 
-    console.log(`Creating gRPC client for ${endpoint}:443...`);
+    console.log(`Creating gRPC client for ${endpoint}...`);
 
     // Create the client with improved timeout and retry settings
     llmClient = new (protoDescriptor.llm as any).LLMService(
-      `${endpoint}:443`, // Always use HTTPS port
-      grpc.credentials.createSsl(), // Use SSL for secure communication with ALB
+      process.env.AWS_LAMBDA_FUNCTION_NAME ? endpoint : `${endpoint}:50051`,
+      process.env.AWS_LAMBDA_FUNCTION_NAME
+        ? grpc.credentials.createSsl()
+        : grpc.credentials.createInsecure(),
       {
         "grpc.service_config": JSON.stringify({
           methodConfig: [
