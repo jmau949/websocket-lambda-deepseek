@@ -3,7 +3,7 @@
  */
 
 import { ChatMessage } from "../services/chat-session.service";
-import { lightlySanitizeInput } from "./sanitization";
+import { lightlySanitizeInput, cleanAssistantResponse } from "./sanitization";
 
 /**
  * Format conversation history for LLM prompt
@@ -32,7 +32,11 @@ export const formatConversationHistory = (history: ChatMessage[]): string => {
       const role = msg.role === "user" ? "Human" : "Assistant";
 
       // Use light sanitization for history to preserve code formatting
-      const content = lightlySanitizeInput(msg.content);
+      // For assistant messages, also clean any <think> blocks
+      const content =
+        msg.role === "user"
+          ? lightlySanitizeInput(msg.content)
+          : cleanAssistantResponse(lightlySanitizeInput(msg.content));
 
       return `${role}: ${content}`;
     })

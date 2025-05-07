@@ -421,7 +421,6 @@ async function processWithLLM(
         timestamp: Date.now(),
       },
     });
-
   });
 
   // Log security monitoring results at the end of response
@@ -437,10 +436,14 @@ async function processWithLLM(
     timestamp: Date.now(),
   });
 
+  // Clean the assistant response to remove <think> blocks before storing
+  const cleanedResponse =
+    sanitizationUtils.cleanAssistantResponse(fullResponse);
+
   // Add assistant response to chat history
   const assistantChatMessage: ChatMessage = {
     role: "assistant",
-    content: fullResponse,
+    content: cleanedResponse,
     timestamp: Date.now(),
   };
 
@@ -451,7 +454,7 @@ async function processWithLLM(
   const response = {
     message: "LLM response complete",
     data: {
-      message: fullResponse,
+      message: fullResponse, // Still send the original response to the client
       sender,
       isComplete: true,
       timestamp: Date.now(),

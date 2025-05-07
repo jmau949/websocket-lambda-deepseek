@@ -313,3 +313,22 @@ export const validateMessageStructure = (
 
   return { valid: true };
 };
+
+/**
+ * Clean assistant response to remove any <think> blocks
+ * @param response The assistant response to clean
+ * @returns The cleaned response with <think> blocks removed
+ */
+export const cleanAssistantResponse = (response: string): string => {
+  try {
+    if (!response || typeof response !== "string") {
+      return "";
+    }
+
+    // Remove everything between <think> and </think> tags including the tags themselves
+    return response.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  } catch (error) {
+    console.error("Error in cleanAssistantResponse:", error);
+    return response; // Return original on error
+  }
+};
