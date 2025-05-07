@@ -43,18 +43,9 @@ import {
 
 // Debug helper to print the current state
 function debugState() {
-  console.log("\n--- DEBUG STATE ---");
-  console.log("Connections:", connections.size);
-  console.log("Chat Sessions:", chatSessions.size);
-  console.log("WebSockets:", sockets.size);
   console.log(
-    "Chat Sessions Map:",
-    Array.from(chatSessions.entries()).map(
-      ([k, v]) =>
-        `${k.substring(0, 8)}... (userId: ${v.userId}, messages: ${
-          v.conversationHistory?.length || 0
-        })`
-    )
+    "Chat Sessions:",
+    JSON.stringify(Array.from(chatSessions.entries()), null, 2)
   );
   console.log("------------------\n");
 }

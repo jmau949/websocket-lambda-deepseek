@@ -282,7 +282,6 @@ export const streamResponse = async (
 
     // Set up event handlers
     stream.on("data", async (response: any) => {
-      console.log(`Stream chunk received: ${response.text.length} chars`);
       await onChunk({
         text: response.text,
         isComplete: response.is_complete,

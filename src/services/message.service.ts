@@ -422,17 +422,6 @@ async function processWithLLM(
       },
     });
 
-    // For long streams, log progress periodically
-    if (chunkCount % 20 === 0) {
-      console.log({
-        event: "llm_stream_progress",
-        connectionId,
-        userId,
-        chunkCount,
-        responseLength: fullResponse.length,
-        timestamp: Date.now(),
-      });
-    }
   });
 
   // Log security monitoring results at the end of response

@@ -74,8 +74,6 @@ export const sendMessageToClient = async (
   data: any
 ): Promise<void> => {
   try {
-    console.log(`Attempting to send message to connection ${connectionId}`);
-
     // Convert data to string if it's not already a string
     const dataString = typeof data === "string" ? data : JSON.stringify(data);
 
@@ -85,7 +83,6 @@ export const sendMessageToClient = async (
     });
 
     await apiGatewayClient.send(command);
-    console.log(`Message successfully sent to connection ${connectionId}`);
   } catch (error) {
     console.error(
       `Error sending message to connection ${connectionId}:`,
