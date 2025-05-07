@@ -22,13 +22,13 @@ export const handler = async (
     //@ts-ignore
     await deleteConnection(connectionId);
     // Delete the chat session for this connection
-    try {
-      await deleteChatSession(connectionId);
-      console.log(`Chat session for ${connectionId} deleted`);
-    } catch (error) {
-      console.warn(`Error deleting chat session for ${connectionId}:`, error);
-      // Continue with disconnect process even if chat session deletion fails
-    }
+    // try {
+    //   await deleteChatSession(connectionId);
+    //   console.log(`Chat session for ${connectionId} deleted`);
+    // } catch (error) {
+    //   console.warn(`Error deleting chat session for ${connectionId}:`, error);
+    //   // Continue with disconnect process even if chat session deletion fails
+    // }
 
     // Return a successful response
     return createResponse(200, { message: "Disconnected" });
